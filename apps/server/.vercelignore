@@ -1,0 +1,8 @@
+# Never upload secrets: on Vercel, OPENROUTER_API_KEY / OPENROUTER_MODEL are set in the dashboard.
+.env
+.env.*
+!.env.example
+node_modules
+coverage
+scripts
+src/**/*.test.ts
