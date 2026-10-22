@@ -99,6 +99,33 @@ describe("history store: status changes", () => {
   });
 });
 
+describe("history store: changes at the same moment don't overwrite each other", () => {
+  it("two adds at once → both saved", async () => {
+    const storage = memoryStore();
+    const store = createHistoryStore(storage, ids);
+    await Promise.all([store.add(pending("FP1")), store.add(pending("FP2", NOW + 1))]);
+    const { entries } = await createHistoryStore(storage, ids).load();
+    expect(entries.map((e) => e.txnRef).sort()).toEqual(["FP1", "FP2"]);
+  });
+
+  it("add, then updateStatus started right away → the update sees the new entry", async () => {
+    const store = createHistoryStore(memoryStore(), ids);
+    const [added, updated] = await Promise.all([store.add(pending("FP1")), store.updateStatus("FP1", "success")]);
+    expect(added.ok).toBe(true);
+    expect(updated).toEqual({ ok: true });
+    expect((await store.load()).entries[0]).toMatchObject({ txnRef: "FP1", status: "success" });
+  });
+
+  it("an update and an add for different payments at once → both kept", async () => {
+    const store = createHistoryStore(memoryStore(), ids);
+    await store.add(pending("FP1"));
+    await Promise.all([store.updateStatus("FP1", "failed"), store.add(pending("FP2", NOW + 1))]);
+    const { entries } = await store.load();
+    expect(entries.find((e) => e.txnRef === "FP1")?.status).toBe("failed");
+    expect(entries.some((e) => e.txnRef === "FP2")).toBe(true);
+  });
+});
+
 describe("history store: corrupt data never crashes", () => {
   it("unreadable JSON → empty list, corrupt: true", async () => {
     const storage = memoryStore();

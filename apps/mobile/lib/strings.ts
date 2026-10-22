@@ -1,7 +1,9 @@
 // All user-facing text lives here.
 import type { PaymentStatus } from "./history";
 import type { PayeeError } from "./payees";
-import type { RuleFailure } from "./rules";
+import type { ReadyCheckId } from "./readyCheck";
+import type { PaymentWarning, RuleFailure } from "./rules";
+import type { Period } from "./spending";
 
 export const strings = {
   appName: "FlowPay",
@@ -14,14 +16,20 @@ export const strings = {
     home: "Back to Home",
   },
   home: {
-    tagline: "Pay by voice, confirm with a tap.",
     prompt: "Who do you want to pay, and how much?",
     placeholder: "Mummy ko 500",
+    placeholderAmount: "500, or pichhli baar jitna",
+    startOver: "Start over",
     next: "Next",
     checking: "Understanding…",
     micTip: "Tip: tap the mic on your keyboard and just say it.",
-    speak: "🎤  Tap and speak",
-    listening: "Listening… tap to stop",
+    // M16 voice-first Home: the big mic and the small links under it.
+    micIdle: "Tap to speak",
+    micOn: "Listening…",
+    micStop: "Tap to stop",
+    typeInstead: "Type instead",
+    hideTyping: "Hide typing",
+    payments: "Payments",
     langEnglish: "EN",
     langHindi: "हिं",
     micDenied: "FlowPay can't use the microphone. You can still type, or use the mic on your keyboard.",
@@ -30,12 +38,12 @@ export const strings = {
     noName: "Who do you want to pay?",
     failed: "Couldn't understand that, please try again.",
     noPrevious: (name: string) => `No previous payment to ${name} found. How much do you want to send?`,
-    seeAll: "See all payments",
+    amountFor: (name: string) => `How much should I send to ${name}?`,
     noUpiFor: (name: string) => `No UPI ID saved for ${name}.`,
     dontKnow: (name: string) => `I don't know ${name} yet. Add them as a payee in Settings.`,
+    reminderWhich: (name: string) => `More than one saved payee matches "${name}". Say the full name for the reminder.`,
     contactsDenied:
       "FlowPay can check your contacts to tell you whether this person exists. Contacts never leave your phone.",
-    recentTitle: "Recent payments",
     noRecent: "No payments yet.",
     serverLabel: "Server",
     serverChecking: "Checking…",
@@ -52,24 +60,35 @@ export const strings = {
     phone: "Phone ending",
     yes: "Yes, send",
     sending: "Opening PhonePe…",
+    openingHint: "Approve the payment in PhonePe with your fingerprint or UPI PIN.",
     no: "No",
     blockedTitle: "Can't send this payment",
     alreadyConfirmed: "This payment was already confirmed.",
     payeeMissing: "This payee no longer exists.",
     sendFailed: "Something went wrong. The payment was not sent.",
     noUpiApp: "No UPI app could be opened, so nothing was paid. Is PhonePe installed?",
-    listeningYes: 'Listening… say "Yes" or "Haan" to send, or tap the button.',
-    notClear: 'Didn\'t hear a clear "Yes". Tap "Yes, send" if you want to send.',
+    newPayee: (hours: number) => `New payee: up to ₹500 per payment for the next ${hours} ${hours === 1 ? "hour" : "hours"}.`,
+    vpaChanged: (hours: number) =>
+      `UPI ID changed recently: up to ₹500 per payment for the next ${hours} ${hours === 1 ? "hour" : "hours"}.`,
+    payeeChanged:
+      "This payee's UPI ID was changed after the card was shown, so nothing was sent. Start again from Home.",
+    listeningYes: 'Listening… say "haan" to send, "nahi" to cancel, or change it ("300 kar do").',
+    notClear: 'Didn\'t catch a clear "yes". Tap the mic to try again, or tap "Yes, send".',
+    fullAmount: 'Say the full amount, like "teen sau kar do".',
+    mic: "🎤  Speak",
+    micListening: "Listening… tap to stop",
   },
   rules: {
     NO_PAYEE: "This person isn't in your saved payees.",
     ZERO: "The amount must be more than ₹0.",
     INVALID_AMOUNT: "That amount isn't valid.",
     OVER_PER_PAYMENT: "₹3,000 is the most you can send in one payment.",
+    NEW_PAYEE_LIMIT: "For the first 24 hours after a payee is added or their UPI ID changes, ₹500 is the most per payment.",
     OVER_DAILY: "This would take you over ₹5,000 for today.",
     HISTORY_UNREADABLE:
       "Payment history can't be read. Payments are paused until it's cleared in Settings.",
   } satisfies Record<RuleFailure, string>,
+  newPayeeHoursLeft: (hours: number) => `Normal limits apply in ${hours} ${hours === 1 ? "hour" : "hours"}.`,
   dailyRemaining: (amount: string) => `You can still send ${amount} today.`,
   // Spoken with the phone's text-to-speech: plain words, no ₹ sign.
   speech: {
@@ -79,9 +98,214 @@ export const strings = {
       ZERO: "The amount must be more than zero.",
       INVALID_AMOUNT: "That amount isn't valid.",
       OVER_PER_PAYMENT: "3000 rupees is the most you can send in one payment.",
+      NEW_PAYEE_LIMIT: "This payee is new, so 500 rupees is the most you can send for now.",
       OVER_DAILY: "This would take you over 5000 rupees for today.",
       HISTORY_UNREADABLE: "Payment history can't be read. Payments are paused.",
     } satisfies Record<RuleFailure, string>,
+  },
+  // The app's side of the conversation (M12): fixed questions, spoken and sent to /turn as-is.
+  conversation: {
+    amount: "How much do you want to send?",
+    payee: "Who do you want to pay?",
+    exactAmount: 'How much exactly? Say the full amount, like "teen sau".',
+    unclear: "Sorry, I didn't get that. Who do you want to pay, and how much?",
+  },
+  // Voice on the Confirm card (rule 8). Spoken with the phone's TTS: plain words, no ₹ sign.
+  voice: {
+    cancelled: "Cancelled.",
+    paused: "Okay, tap the mic when you're ready.",
+    reask: (amount: string) => `It's already ${amount}. Say yes to send.`,
+    tapOnly: "Please tap Yes to send.",
+    askAgain: "Are you sure? Say yes again.",
+    offer: (amount: string) => `Send ${amount} instead?`,
+    // M13, spoken
+    warnings: {
+      FIRST_PAYMENT: (name: string) => `This is your first payment to ${name}.`,
+      UNUSUAL_AMOUNT: (name: string) => `This is much more than you usually send to ${name}.`,
+      LATE_NIGHT: (_name: string) => "It's very late at night.",
+    } satisfies Record<PaymentWarning, (name: string) => string>,
+    reminderAsk: (when: string, name: string, amount: string | null) =>
+      `Remind you ${when} to send ${amount ?? "money"} to ${name}?`,
+    reminderSaved: "Reminder saved.",
+    blocked: "I can only pay saved payees. Add new ones in Settings.",
+    spending: (amount: string, count: number) =>
+      count === 0 ? "No payments found." : `${amount} in ${count} ${count === 1 ? "payment" : "payments"}.`,
+    // M16, spoken: Home's nudge after silence, and the result after PhonePe.
+    nudge: "I'm listening. Who do you want to pay, and how much?",
+    paid: (amount: string, name: string) => `Done. ${amount} sent to ${name}.`,
+    notPaid: "The payment didn't go through.",
+    noUpiApp: "PhonePe couldn't be opened, so nothing was paid.",
+    didItGo: "Did the payment go through? Please tap a button.",
+    // M17, spoken: the family helper.
+    helperAsk: (name: string) => `Should I call ${name}?`,
+    helperCalling: (name: string) => `Opening the phone to call ${name}.`,
+  },
+  // M17: the family helper (one trusted person, on this phone only) and the monthly suggestion.
+  helper: {
+    title: "Family helper",
+    hint: "One person FlowPay offers to call when something goes wrong. Saved on this phone only.",
+    none: "No helper saved yet.",
+    add: "Add a helper",
+    name: "Name (for example: Beta)",
+    phone: "Mobile number",
+    save: "Save helper",
+    change: "Change",
+    remove: "Remove helper",
+    call: (name: string) => `📞  Call ${name}`,
+    authPrompt: "Confirm it's you to change the family helper",
+    authNoLock: "Set a screen lock (fingerprint or PIN) on this phone first, then save the helper.",
+    authFailed: "Couldn't confirm it's you. Nothing was changed.",
+    invalidName: "Enter a name (up to 50 letters).",
+    invalidPhone: "Enter a 10-digit Indian mobile number.",
+    callFailed: "Couldn't open the phone app.",
+  },
+  suggest: {
+    monthly: (when: string) => `🔔  Remind me ${when}`,
+  },
+  // M14 agent: fixed messages (never the model's own words), recent payments, limit left.
+  agent: {
+    tell: {
+      cant_change_limits: "I can't change the limits. They keep your money safe.",
+      cant_skip_confirmation: "I always ask before sending, so you can check it first.",
+      only_saved_payees: "I can only pay saved payees. Add new ones in Settings.",
+      not_supported: "Sorry, I can't do that. I can send money to saved people, tell you what was sent, and set reminders.",
+    },
+    payeeSaved: (name: string) => `${name} is saved.`,
+    payeeNotSaved: (name: string) => `${name} isn't saved yet. Add them as a payee in Settings.`,
+    recentTitle: (name: string | null) => (name ? `Last payments to ${name}` : "Last payments"),
+    recentSpoken: (count: number) =>
+      count === 0 ? "No payments yet." : `Here ${count === 1 ? "is your last payment" : `are your last ${count} payments`}.`,
+    limitLeftTitle: "Left for today",
+    stepsTitle: "Agent steps (DEV)",
+  },
+  // M15: "Kyun block hua?" (screen; spoken: speech.ts). Amounts come in formatted.
+  explain: {
+    nothing: "Nothing was stopped recently.",
+    perPayment: (amount: string, name: string, max: string) => `${amount} to ${name} was stopped: one payment can be at most ${max}.`,
+    daily: (amount: string, name: string, sent: string, left: string) =>
+      `${amount} to ${name} was stopped: ${sent} was already sent today, and only ${left} is left of the daily limit.`,
+    newPayee: (amount: string, name: string, hours: number, max: string) =>
+      `${amount} to ${name} was stopped: ${name} was added or got a new UPI ID recently, so at most ${max} per payment for ${hours} more ${hours === 1 ? "hour" : "hours"}.`,
+    notSaved: (name: string) => `${name} isn't among your saved payees.`,
+    payeeChanged: (name: string) => `${name}'s UPI ID changed after the card was shown, so nothing was sent.`,
+    historyUnreadable: "The payment history couldn't be read, so payments are paused. Settings can clear it.",
+    invalidAmount: "That amount wasn't valid.",
+    relative: "The amount was said relative to another one. I only send an exact amount, so say the full amount.",
+    screened: "Your words had a UPI ID or a phone number. I never send those, and I only pay saved payees.",
+    failed: "The server couldn't be reached, so nothing was sent. Please try again.",
+    paid: (amount: string, name: string) => `The last payment went through: ${amount} to ${name}.`,
+    notPaid: (amount: string, name: string) => `PhonePe said the payment of ${amount} to ${name} didn't go through.`,
+    noUpiApp: "PhonePe couldn't be opened, so nothing was paid.",
+    unsure: (amount: string, name: string) => `PhonePe didn't say whether ${amount} to ${name} went through. Check the payment in PhonePe.`,
+    saidAs: (spoken: string, name: string) => `You said "${spoken}", which is saved as ${name}.`,
+  },
+  // M15: preferences (set by voice, or in Settings → Voice).
+  prefs: {
+    title: "Voice",
+    speakReplies: "Speak replies",
+    speakHint: "Off: Home and receipts only show the answer. The Confirm card always asks aloud.",
+    replyLanguage: "Reply language",
+    auto: "Like the mic",
+    english: "English",
+    hindi: "हिंदी",
+    noHindiVoice: "This phone has no Hindi voice, so replies stay in English.",
+    changed: {
+      "reply_language:hindi": "Okay, I'll reply in Hindi.",
+      "reply_language:english": "Okay, I'll reply in English.",
+      "reply_language:auto": "Okay, I'll reply in the mic's language.",
+      "speak_replies:off": "Okay, I'll only show answers now.",
+      "speak_replies:on": "Okay, I'll speak again.",
+      "mic_language:hindi": "Okay, speak in Hindi now.",
+      "mic_language:english": "Okay, speak in English now.",
+    } as Record<string, string>,
+  },
+  scanQr: {
+    title: "Scan UPI QR",
+    hint: "Point the camera at the payee's UPI QR code (like the sticker at a shop). Nothing is paid by scanning.",
+    unavailable:
+      "The camera isn't in this build yet. Install a new development build (DEPLOY.md step 2), or type the UPI ID.",
+    denied: "FlowPay can't use the camera. Allow it in the phone's settings, or type the UPI ID.",
+    openSettings: "Open phone settings",
+    asking: "Asking for the camera…",
+    reasons: {
+      notUpi: "That isn't a UPI payment QR code. Try the payee's own UPI QR.",
+      noVpa: "This QR code has no UPI ID in it.",
+      badVpa: "The UPI ID in this QR code isn't valid.",
+      multiple: "This QR code has more than one UPI ID, so it can't be used.",
+    },
+  },
+  // M15: nicknames ("Maa matlab Mummy"), saved with the fingerprint/PIN.
+  alias: {
+    title: "Add a name",
+    ask: (alias: string, name: string) => `Add "${alias}" as a name for ${name}?`,
+    hint: (alias: string, name: string) => `Saving needs your fingerprint or phone PIN. After that, "${alias}" pays ${name}.`,
+    add: "Add name",
+    saved: (alias: string, name: string) => `Saved. Now "${alias}" means ${name}.`,
+    authPrompt: "Confirm it's you to add a name",
+    authNoLock: "Set a screen lock (fingerprint or PIN) on this phone first.",
+    authFailed: "Couldn't confirm it's you. Nothing was saved.",
+    changed: "This payee changed in the meantime. Nothing was saved.",
+    refused: {
+      noPayee: (_alias: string, name: string) => `${name} isn't a saved payee.`,
+      many: (_alias: string, name: string) => `More than one saved payee matches "${name}". Add the name in Settings instead.`,
+      invalid: (_alias: string, _name: string) => "That name can't be used.",
+      already: (alias: string, name: string) => `"${alias}" already means ${name}.`,
+      usedByOther: (alias: string, _name: string) => `"${alias}" already matches another payee, so it can't be added.`,
+      tooMany: (_alias: string, name: string) => `${name} already has the most names allowed.`,
+    },
+  },
+  // M13: amber cards, the red-card offer, spending, reminders, the UPI ID check. Screen text.
+  amber: {
+    title: "Check before sending",
+    yesSure: "Yes, I'm sure",
+    warnings: {
+      FIRST_PAYMENT: (name: string) => `First payment to ${name}.`,
+      UNUSUAL_AMOUNT: (name: string) => `Much more than you usually send to ${name} (over 3× the usual amount).`,
+      LATE_NIGHT: (_name: string) => "It's late at night (11 PM – 5 AM).",
+    } satisfies Record<PaymentWarning, (name: string) => string>,
+    askAgainHint: 'Say "haan" again to send, or tap "Yes, I\'m sure".',
+  },
+  offer: {
+    button: (amount: string) => `Send ${amount} instead`,
+  },
+  spending: {
+    title: (name: string | null) => (name ? `Sent to ${name}` : "Sent to everyone"),
+    periods: {
+      today: "Today",
+      yesterday: "Yesterday",
+      this_week: "This week (from Monday)",
+      this_month: "This month",
+      last_month: "Last month",
+      all: "All time",
+    } satisfies Record<Period, string>,
+    note: "Worked out on your phone. Only payments marked Done are added up.",
+  },
+  reminder: {
+    title: "Reminder",
+    question: (when: string, name: string, amount: string | null) =>
+      `Remind you ${when} to send ${amount ?? "money"} to ${name}?`,
+    hint: 'Say "haan" or tap Save. A reminder never pays by itself: it opens the payment for you to confirm.',
+    save: "Save reminder",
+    saved: (when: string) => `Reminder saved. It will ring ${when} at 9 AM.`,
+    listening: 'Listening… say "haan" to save, or "nahi" to cancel.',
+    devSoon: "Save, ring in 2 min (DEV)",
+    devSaved: "Reminder saved. It will ring in about 2 minutes (DEV).",
+    notificationsOff: "Notifications are off for FlowPay, so the reminder can't ring. Turn them on in Android settings.",
+    unavailable: "Reminders need notifications, which aren't available in this build.",
+    tooMany: "You already have 20 reminders. Delete one in Settings first.",
+    failed: "Couldn't save the reminder. Nothing was saved.",
+    listTitle: "Reminders",
+    none: "No reminders.",
+    row: (name: string, amount: string | null, when: string) => `${name}${amount ? ` · ${amount}` : ""} · ${when}`,
+    delete: "Delete",
+    noPayee: "The payee for this reminder no longer exists.",
+    notClear: 'Didn\'t catch a clear "yes". Tap Save, or tap the mic to try again.',
+  },
+  upiCheck: {
+    title: "UPI ID check",
+    blockedText: "That has a UPI ID or phone number in it, so FlowPay didn't send it anywhere.",
+    onlySaved: "I can only pay saved payees. Add new ones in Settings.",
+    check: "Check this UPI ID",
   },
   choose: {
     title: (name: string) => `Which ${name}?`,
@@ -132,6 +356,67 @@ export const strings = {
     noLaunchYet: "No PhonePe launch yet in this session.",
     done: "Done",
   },
+  rehearsal: {
+    banner: "REHEARSAL — no money moves",
+    title: "Rehearsal mode",
+    switchLabel: "Rehearsal mode (no money moves)",
+    hint:
+      "Practise the full flow: PhonePe never opens and every payment is marked as a rehearsal. Rehearsal payments count toward today's limit until you clear them.",
+    clear: (n: number) => `Clear rehearsal payments (${n})`,
+    receiptNote: "This was a rehearsal. No money moved.",
+    rowTag: "Rehearsal",
+    sending: "Rehearsing… (no money moves)",
+    modeChanged:
+      "Rehearsal mode was switched on or off after this payment was prepared, so it can't be sent. Start it again from Home.",
+  },
+  readyCheck: {
+    title: "Ready check",
+    open: "Ready check",
+    runAgain: "Run again",
+    running: "Checking…",
+    allGood: "All good. Ready for the demo.",
+    toFix: (n: number) => `${n} to fix before the demo.`,
+    limitLeft: (amount: string) => `${amount} left today`,
+    rows: {
+      server: { label: "Server reachable", fix: "Start the server (or check Vercel) and EXPO_PUBLIC_API_URL." },
+      parse: {
+        label: "Understands a test payment",
+        fix: "The server is up but couldn't understand \"Mummy ko paanch sau bhejo\". Check the OpenRouter key, model and credit.",
+      },
+      mic: {
+        label: "Microphone allowed",
+        fix: "Tap the mic on Home once and allow it. Expo Go has no in-app mic: use the development or release build.",
+      },
+      contacts: {
+        label: "Contacts permission answered",
+        fix: "Type a name that isn't a payee on Home and answer the contacts prompt, so it can't pop up during the demo.",
+      },
+      tts: {
+        label: "English (India) voice installed",
+        fix: "Android Settings → Text-to-speech → Speech Services by Google → install English (India).",
+      },
+      upiApp: {
+        label: "UPI app found",
+        fix: "Install PhonePe and link your bank. In Expo Go this check can fail even when PhonePe is installed.",
+      },
+      payees: { label: "At least one payee", fix: "Settings → Add payee." },
+      history: { label: "Payment history readable", fix: "Settings → Clear unreadable history." },
+      limit: {
+        label: "Daily limit left",
+        fix: "Today's ₹5,000 is used up. Clear rehearsal payments, or wait until midnight (IST).",
+      },
+      rehearsalOff: { label: "Rehearsal mode off", fix: "Settings → turn off Rehearsal mode before the real demo." },
+      rehearsalEntries: {
+        label: "No rehearsal payments left",
+        fix: "Settings → Clear rehearsal payments, so they don't count toward today or \"same as last time\".",
+      },
+      notifications: {
+        label: "Notifications allowed (reminders)",
+        fix: "Save one reminder and allow notifications. If it says \"not available\", install a development build made after M13.",
+      },
+      helper: { label: "Family helper saved", fix: "Settings → Family helper → Add, so FlowPay can offer to call you." },
+    } satisfies Record<ReadyCheckId, { label: string; fix: string }>,
+  },
   payeeEdit: {
     addTitle: "Add payee",
     editTitle: "Edit payee",
@@ -144,8 +429,17 @@ export const strings = {
     aliases: "Other names (optional, comma separated)",
     aliasesPlaceholder: "mumma, maa, mom",
     save: "Save",
+    // Scan a payee's UPI QR (fills the form only; saving still needs the fingerprint/PIN).
+    scan: "📷  Scan UPI QR code",
+    scanned: "Filled in from the QR code. Check the name and UPI ID before saving: the name on a QR code is chosen by its owner.",
+    scannedShop: "This is a shop's QR code.",
+    scannedNewVpa: "A new UPI ID means at most ₹500 per payment for the next 24 hours.",
     delete: "Delete payee",
     deleteConfirm: (name: string) => `Delete ${name}?`,
+    authPrompt: "Confirm it's you to change your payees",
+    authNoLock:
+      "Set a screen lock (PIN, pattern or fingerprint) in Android settings first. FlowPay asks for it before any payee is added, changed or deleted.",
+    authFailed: "Couldn't confirm it's you, so nothing was changed.",
     errors: {
       INVALID_NAME: "Enter a name (up to 50 characters).",
       INVALID_VPA: "That doesn't look like a UPI ID (name@bank).",

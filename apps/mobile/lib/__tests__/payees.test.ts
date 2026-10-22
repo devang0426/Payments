@@ -1,11 +1,18 @@
 import { createPayeeStore } from "../payees";
-import { memoryStore } from "./fixtures";
+import { ist, memoryStore } from "./fixtures";
 
 let n = 0;
 const ids = () => `id${++n}`;
 
+// A fixed, movable clock for addedAt / vpaChangedAt.
+const T0 = ist("2026-10-15T10:00:00");
+const HOUR = 60 * 60 * 1000;
+let now = T0;
+const clock = () => now;
+
 beforeEach(() => {
   n = 0;
+  now = T0;
 });
 
 const MUMMY_INPUT = {
@@ -20,8 +27,8 @@ describe("payee store", () => {
     expect(await createPayeeStore(memoryStore(), ids).load()).toEqual({ payees: [], corrupt: false });
   });
 
-  it("adds a payee with cleaned-up fields", async () => {
-    const store = createPayeeStore(memoryStore(), ids);
+  it("adds a payee with cleaned-up fields, saved and given its UPI ID now", async () => {
+    const store = createPayeeStore(memoryStore(), ids, clock);
     expect(await store.add(MUMMY_INPUT)).toEqual({
       ok: true,
       payee: {
@@ -30,13 +37,18 @@ describe("payee store", () => {
         vpa: "mummy.fake@upi",
         phone: "+919000000001",
         aliases: ["mumma", "maa"],
+        addedAt: T0,
+        vpaChangedAt: T0,
       },
     });
   });
 
   it("phone is optional", async () => {
-    const result = await createPayeeStore(memoryStore(), ids).add({ displayName: "Priya", vpa: "priya.fake@upi" });
-    expect(result).toEqual({ ok: true, payee: { id: "id1", displayName: "Priya", vpa: "priya.fake@upi", aliases: [] } });
+    const result = await createPayeeStore(memoryStore(), ids, clock).add({ displayName: "Priya", vpa: "priya.fake@upi" });
+    expect(result).toEqual({
+      ok: true,
+      payee: { id: "id1", displayName: "Priya", vpa: "priya.fake@upi", aliases: [], addedAt: T0, vpaChangedAt: T0 },
+    });
   });
 
   it("persists across store instances (same storage)", async () => {
@@ -66,10 +78,14 @@ describe("payee store", () => {
   });
 
   it("updates a payee", async () => {
-    const store = createPayeeStore(memoryStore(), ids);
+    const store = createPayeeStore(memoryStore(), ids, clock);
     await store.add(MUMMY_INPUT);
+    now = T0 + HOUR;
     const result = await store.update("id1", { displayName: "Mom", vpa: "mummy.fake@upi", aliases: ["mummy"] });
-    expect(result).toEqual({ ok: true, payee: { id: "id1", displayName: "Mom", vpa: "mummy.fake@upi", aliases: ["mummy"] } });
+    expect(result).toEqual({
+      ok: true,
+      payee: { id: "id1", displayName: "Mom", vpa: "mummy.fake@upi", aliases: ["mummy"], addedAt: T0, vpaChangedAt: T0 },
+    });
     expect((await store.load()).payees).toHaveLength(1);
   });
 
@@ -111,6 +127,120 @@ describe("payee store", () => {
       expect(value.length).toBeLessThan(2048);
     }
     expect(storage.raw.size).toBe(3); // index + 2 payees
+  });
+});
+
+describe("payee store: when a payee was saved and got its UPI ID (24 h new-payee limit)", () => {
+  it("changing the UPI ID sets vpaChangedAt to now and keeps addedAt", async () => {
+    const store = createPayeeStore(memoryStore(), ids, clock);
+    await store.add(MUMMY_INPUT);
+    now = T0 + 48 * HOUR;
+    const result = await store.update("id1", { displayName: "Mummy", vpa: "mummy.new.fake@upi" });
+    expect(result).toMatchObject({ ok: true, payee: { addedAt: T0, vpaChangedAt: T0 + 48 * HOUR } });
+  });
+
+  it("the same UPI ID typed differently (case, spaces) is not a change", async () => {
+    const store = createPayeeStore(memoryStore(), ids, clock);
+    await store.add(MUMMY_INPUT);
+    now = T0 + 48 * HOUR;
+    const result = await store.update("id1", { displayName: "Mummy", vpa: "  MUMMY.fake@upi " });
+    expect(result).toMatchObject({ ok: true, payee: { addedAt: T0, vpaChangedAt: T0 } });
+  });
+
+  it("changing only the name, phone or other names keeps both timestamps", async () => {
+    const store = createPayeeStore(memoryStore(), ids, clock);
+    await store.add(MUMMY_INPUT);
+    now = T0 + 48 * HOUR;
+    const result = await store.update("id1", {
+      displayName: "Mom",
+      vpa: "mummy.fake@upi",
+      phone: "+91 90000 00009",
+      aliases: ["ma"],
+    });
+    expect(result).toMatchObject({ ok: true, payee: { addedAt: T0, vpaChangedAt: T0 } });
+  });
+
+  it("the timestamps survive a restart (new store instance, same storage)", async () => {
+    const storage = memoryStore();
+    await createPayeeStore(storage, ids, clock).add(MUMMY_INPUT);
+    now = T0 + 5 * HOUR;
+    const { payees } = await createPayeeStore(storage, ids, clock).load();
+    expect(payees[0]).toMatchObject({ addedAt: T0, vpaChangedAt: T0 });
+  });
+});
+
+describe("payee store: payees saved before M10 (no timestamps)", () => {
+  // What M3–M9 wrote: the same payee without addedAt / vpaChangedAt.
+  const legacyStorage = () =>
+    memoryStore({
+      "flowpay.payees.index": JSON.stringify(["old1"]),
+      "flowpay.payee.old1": JSON.stringify({
+        id: "old1",
+        displayName: "Mummy",
+        vpa: "mummy.fake@upi",
+        aliases: ["maa"],
+      }),
+    });
+
+  it("load still returns them, as saved now (safe side: one 24 h limit after the update)", async () => {
+    const { payees, corrupt } = await createPayeeStore(legacyStorage(), ids, clock).load();
+    expect(corrupt).toBe(false);
+    expect(payees).toEqual([
+      { id: "old1", displayName: "Mummy", vpa: "mummy.fake@upi", aliases: ["maa"], addedAt: T0, vpaChangedAt: T0 },
+    ]);
+  });
+
+  it("the migration time is written once: a later load doesn't restart the 24 h", async () => {
+    const storage = legacyStorage();
+    await createPayeeStore(storage, ids, clock).load();
+    now = T0 + 30 * HOUR;
+    const { payees } = await createPayeeStore(storage, ids, clock).load();
+    expect(payees[0]).toMatchObject({ addedAt: T0, vpaChangedAt: T0 });
+  });
+
+  it("an entry with broken timestamps is corrupt (skipped), not migrated", async () => {
+    const storage = memoryStore({
+      "flowpay.payees.index": JSON.stringify(["bad1"]),
+      "flowpay.payee.bad1": JSON.stringify({
+        id: "bad1",
+        displayName: "Mummy",
+        vpa: "mummy.fake@upi",
+        aliases: [],
+        addedAt: -5,
+        vpaChangedAt: "yesterday",
+      }),
+    });
+    expect(await createPayeeStore(storage, ids, clock).load()).toEqual({ payees: [], corrupt: true });
+  });
+});
+
+describe("payee store: changes at the same moment don't overwrite each other", () => {
+  it("two adds at once → both saved", async () => {
+    const storage = memoryStore();
+    const store = createPayeeStore(storage, ids, clock);
+    await Promise.all([
+      store.add({ displayName: "Mummy", vpa: "mummy.fake@upi" }),
+      store.add({ displayName: "Papa", vpa: "papa.fake@upi" }),
+    ]);
+    const { payees } = await createPayeeStore(storage, ids, clock).load();
+    expect(payees.map((p) => p.displayName).sort()).toEqual(["Mummy", "Papa"]);
+  });
+
+  it("two adds of the same UPI ID at once → only one is saved", async () => {
+    const store = createPayeeStore(memoryStore(), ids, clock);
+    const results = await Promise.all([
+      store.add({ displayName: "Mummy", vpa: "mummy.fake@upi" }),
+      store.add({ displayName: "Mom", vpa: "mummy.fake@upi" }),
+    ]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect((await store.load()).payees).toHaveLength(1);
+  });
+
+  it("add + remove of another payee at once → both happen", async () => {
+    const store = createPayeeStore(memoryStore(), ids, clock);
+    await store.add({ displayName: "Mummy", vpa: "mummy.fake@upi" });
+    await Promise.all([store.add({ displayName: "Papa", vpa: "papa.fake@upi" }), store.remove("id1")]);
+    expect((await store.load()).payees.map((p) => p.displayName)).toEqual(["Papa"]);
   });
 });
 

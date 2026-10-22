@@ -28,6 +28,9 @@ describe("POST /parse: success", () => {
     ["Papa ko dhai sau", { name: "Papa", amountText: "dhai sau" }, "Papa", 25000],
     ["Rahul ko 1.5k", { name: "Rahul", amountText: "1.5k" }, "Rahul", 150000],
     ["मम्मी को ५०० भेजो", { name: "मम्मी", amountText: "५००" }, "मम्मी", 50000],
+    // M11: the full Devanagari sentence; the AI copies only the amount span "पाँच सौ"
+    ["मम्मी को पाँच सौ भेजो", { name: "मम्मी", amountText: "पाँच सौ" }, "मम्मी", 50000],
+    ["पापा को ढाई हज़ार रुपये भेज दो", { name: "पापा", amountText: "ढाई हज़ार रुपये" }, "पापा", 250000],
     ["Mummy ko ₹500 bhejo", { name: "mummy", amountText: "₹500" }, "mummy", 50000], // case-insensitive copy
     ["Mummy  ko   paanch   sau", { name: "Mummy", amountText: "paanch sau" }, "Mummy", 50000], // whitespace
   ])("%j", async (text, output, name, paise) => {

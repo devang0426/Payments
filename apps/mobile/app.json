@@ -24,7 +24,13 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -53,11 +59,27 @@
           ]
         }
       ],
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FlowPay uses the camera only to read a payee's UPI QR code when you add them. Nothing is paid by scanning.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
       "./plugins/withUpiQueries"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bd8d99e3-4eda-4c2a-88e4-b1482a7fca29"
+      }
+    },
+    "owner": "devangs-team"
   }
 }

@@ -2,8 +2,19 @@
 // apart from "I don't know X yet". Nothing from contacts is stored or sent anywhere.
 import { Contact, ContactField, getPermissionsAsync, requestPermissionsAsync } from "expo-contacts";
 import { normalizeName } from "./match";
+import type { PermissionState } from "./readyCheck";
 
 export type ContactLookup = "found" | "notFound" | "denied";
+
+// Contacts permission without asking (Ready check). "undetermined" = a pop-up would appear.
+export async function contactsPermission(): Promise<PermissionState> {
+  try {
+    const p = await getPermissionsAsync();
+    return p.granted ? "granted" : p.canAskAgain ? "undetermined" : "denied";
+  } catch {
+    return "undetermined";
+  }
+}
 
 export async function findContactByName(name: string): Promise<ContactLookup> {
   try {

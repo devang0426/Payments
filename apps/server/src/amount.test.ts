@@ -175,6 +175,91 @@ describe("failures (ok: false)", () => {
   ])("%j", (input) => expectFail(input));
 });
 
-describe("out of scope for now: Devanagari number words fail safely", () => {
-  it.each([["पांच सौ"], ["दो हज़ार"]])("%j", (input) => expectFail(input));
+// M11: the हिं mic writes Devanagari, so number words are read in Devanagari too. Same values and the
+// same strictness as the Latin words above.
+describe("Devanagari number words (M11)", () => {
+  it.each([
+    // the two inputs that failed on purpose before M11
+    ["पांच सौ", 50000],
+    ["दो हज़ार", 200000],
+    // chandrabindu ँ and anusvara ं are the same; nukta ़ is optional (हज़ार / हजार)
+    ["पाँच सौ", 50000],
+    ["दो हजार", 200000],
+    ["दो हज़ार पाँच सौ", 250000],
+    ["एक लाख", 10000000],
+    ["एक", 100],
+    ["दस", 1000],
+    ["पचास", 5000],
+    ["पच्चीस", 2500],
+    ["निन्यानवे", 9900],
+    ["एक सौ पच्चीस", 12500],
+    ["सात सौ", 70000], // सात 7
+    ["साठ", 6000], // साठ 60: different letters, no saat/saath trap
+    ["छह सौ", 60000],
+    ["छः सौ", 60000],
+    ["पंद्रह सौ", 150000],
+    ["पन्द्रह सौ", 150000],
+  ])("%j → %i", (input, paise) => expectPaise(input, paise));
+});
+
+describe("Devanagari fractions and prefixes (M11)", () => {
+  it.each([
+    ["डेढ़ सौ", 15000],
+    ["डेढ हजार", 150000],
+    ["ढाई सौ", 25000],
+    ["सवा सौ", 12500],
+    ["साढ़े तीन सौ", 35000],
+    ["साढे तीन सौ", 35000],
+    ["पौने दो सौ", 17500],
+    // with हज़ार (user-requested)
+    ["ढाई हज़ार", 250000],
+    ["डेढ़ हज़ार", 150000],
+    ["साढ़े तीन हज़ार", 350000],
+    ["पौने दो हज़ार", 175000],
+  ])("%j → %i", (input, paise) => expectPaise(input, paise));
+});
+
+describe("romanized Hindi, confirmed for M11 (the EN mic and typing)", () => {
+  it.each([
+    ["paanch sau", 50000],
+    ["dhai hazaar", 250000],
+    ["dedh sau", 15000],
+    ["sava sau", 12500],
+  ])("%j → %i", (input, paise) => expectPaise(input, paise));
+});
+
+describe("Devanagari currency words, digits and mixes (M11)", () => {
+  it.each([
+    ["पाँच सौ रुपये", 50000],
+    ["पांच सौ रुपए", 50000],
+    ["एक रुपया", 100],
+    ["५०० रुपये", 50000],
+    ["₹ पाँच सौ", 50000],
+    ["5 सौ", 50000],
+    ["२ हज़ार", 200000],
+  ])("%j → %i", (input, paise) => expectPaise(input, paise));
+});
+
+describe('Devanagari: a trailing "दो" is the verb "give", like "do"', () => {
+  it.each([
+    ["पाँच सौ दो", 50000],
+    ["दो सौ दो", 20000],
+    ["५०० दो", 50000],
+    ["दो", 200], // alone it is the number 2
+  ])("%j → %i", (input, paise) => expectPaise(input, paise));
+});
+
+describe("Devanagari failures (ok: false)", () => {
+  it.each([
+    ["कुछ पैसे"], // "some money"
+    ["बहुत सारे"], // "a lot"
+    ["पाँच सौ या छह सौ"], // two amounts
+    ["सौ सौ"],
+    // Unknown word: parseAmount only gets the amount SPAN. A full sentence ("मम्मी को पाँच सौ भेजो")
+    // works because the AI copies only "पाँच सौ" (see app.test.ts and turn.test.ts).
+    ["पाँच सौ भेजो"],
+    ["हज़ार लाख"], // groups must get smaller
+    ["साढ़े"], // incomplete prefix
+    ["शून्य"], // zero is not a payment
+  ])("%j", (input) => expectFail(input));
 });

@@ -1,17 +1,17 @@
 // "Which Mummy?" — shown when more than one saved payee matches the spoken name.
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
 
-import { Card, Notice, Screen, ui } from "@/components/ui";
+import { Card, Notice, Screen, Text, ui } from "@/components/ui";
 import { confirmFor, decodeAmount } from "@/lib/flow";
 import { formatRupees, maskVpa } from "@/lib/format";
 import { matchPayees } from "@/lib/match";
 import type { Payee } from "@/lib/payees";
-import { historyStore, payeeStore } from "@/lib/stores";
+import { txnRefFor } from "@/lib/rehearsal";
+import { historyStore, payeeStore, rehearsal } from "@/lib/stores";
 import { strings } from "@/lib/strings";
-import { colors, fontSize } from "@/lib/theme";
-import { makeTxnRef } from "@/lib/upi";
+import { fontSize, fonts } from "@/lib/theme";
 
 export default function ChooseScreen() {
   const params = useLocalSearchParams<{ name: string; amount: string }>();
@@ -36,9 +36,10 @@ export default function ChooseScreen() {
     if (result.kind === "noPrevious") return setMessage(strings.home.noPrevious(payee.displayName));
     if (result.kind !== "confirm") return;
     // Confirm runs the rules again itself; this only chooses the payee and the amount.
+    const txnRef = txnRefFor(await rehearsal.load());
     router.replace({
       pathname: "/confirm",
-      params: { payeeId: payee.id, amountPaise: String(result.amountPaise), txnRef: makeTxnRef() },
+      params: { payeeId: payee.id, amountPaise: String(result.amountPaise), txnRef },
     });
   }
 
@@ -64,6 +65,6 @@ export default function ChooseScreen() {
 }
 
 const styles = StyleSheet.create({
-  amount: { fontSize: 32, fontWeight: "800", color: colors.text },
-  name: { fontSize: fontSize.button, fontWeight: "700", color: colors.text },
+  amount: { fontSize: 32, fontFamily: fonts.bold },
+  name: { fontSize: fontSize.button, fontFamily: fonts.bold },
 });

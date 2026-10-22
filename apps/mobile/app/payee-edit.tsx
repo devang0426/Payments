@@ -1,10 +1,13 @@
-// Add or edit a payee. Real UPI IDs are only ever typed here and kept in SecureStore on the phone.
-import { router, useLocalSearchParams, useNavigation } from "expo-router";
-import { useEffect, useState } from "react";
+// Add or edit a payee. Real UPI IDs are only ever typed (or scanned from the payee's UPI QR) here and
+// kept in SecureStore on the phone. Every save or delete first needs the phone's fingerprint / PIN
+// (lib/deviceAuth.ts). A scan only fills the fields; nothing is saved until Save.
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 
 import { Button, Field, Notice, Screen } from "@/components/ui";
-import { payeeStore } from "@/lib/stores";
+import { deviceAuth } from "@/lib/deviceAuthNative";
+import { payeeStore, qrHandoff } from "@/lib/stores";
 import { strings } from "@/lib/strings";
 
 const s = strings.payeeEdit;
@@ -18,6 +21,8 @@ export default function PayeeEditScreen() {
   const [aliases, setAliases] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
+  const savedVpa = useRef<string | null>(null); // the UPI ID before editing (edit mode)
 
   useEffect(() => {
     navigation.setOptions({ title: id ? s.editTitle : s.addTitle });
@@ -25,6 +30,7 @@ export default function PayeeEditScreen() {
     payeeStore.load().then(({ payees }) => {
       const payee = payees.find((p) => p.id === id);
       if (!payee) return setError(s.errors.NOT_FOUND);
+      savedVpa.current = payee.vpa;
       setDisplayName(payee.displayName);
       setVpa(payee.vpa);
       setPhone(payee.phone ?? "");
@@ -32,10 +38,32 @@ export default function PayeeEditScreen() {
     });
   }, [id, navigation]);
 
+  // Back from the scanner: fill the UPI ID; the QR's name only if no name is typed yet.
+  useFocusEffect(
+    useCallback(() => {
+      const scanned = qrHandoff.take();
+      if (!scanned) return;
+      setVpa(scanned.vpa);
+      if (scanned.name) setDisplayName((current) => (current.trim() ? current : scanned.name!));
+      const notes = [s.scanned, scanned.merchant ? s.scannedShop : null, savedVpa.current && savedVpa.current !== scanned.vpa ? s.scannedNewVpa : null];
+      setScanNote(notes.filter(Boolean).join(" "));
+      setError(null);
+    }, []),
+  );
+
+  // true only after a successful fingerprint / PIN; otherwise says why (a cancel just does nothing).
+  async function confirmIdentity(): Promise<boolean> {
+    const auth = await deviceAuth.confirm(s.authPrompt);
+    if (auth === "noLock") setError(s.authNoLock);
+    else if (auth === "failed") setError(s.authFailed);
+    return auth === "ok";
+  }
+
   async function save() {
     if (saving) return;
     setSaving(true);
     setError(null);
+    if (!(await confirmIdentity())) return setSaving(false);
     const input = { displayName, vpa, phone, aliases: aliases.split(",") };
     const result = id ? await payeeStore.update(id, input) : await payeeStore.add(input);
     setSaving(false);
@@ -43,16 +71,25 @@ export default function PayeeEditScreen() {
     router.back();
   }
 
+  async function removeConfirmed(payeeId: string) {
+    setError(null);
+    if (!(await confirmIdentity())) return;
+    await payeeStore.remove(payeeId);
+    router.back();
+  }
+
   function remove() {
     if (!id) return;
     Alert.alert(s.deleteConfirm(displayName), undefined, [
       { text: strings.common.cancel, style: "cancel" },
-      { text: s.delete, style: "destructive", onPress: () => payeeStore.remove(id).then(() => router.back()) },
+      { text: s.delete, style: "destructive", onPress: () => removeConfirmed(id) },
     ]);
   }
 
   return (
     <Screen>
+      <Button variant="secondary" label={s.scan} onPress={() => router.push("/scan-qr")} disabled={saving} />
+      {scanNote && <Notice tone="info" text={scanNote} />}
       <Field label={s.name} value={displayName} onChangeText={setDisplayName} placeholder={s.namePlaceholder} />
       <Field
         label={s.vpa}

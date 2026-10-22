@@ -23,7 +23,16 @@ Add the two secrets (it asks for the value; paste it there, not in chat):
 npx vercel@latest env add OPENROUTER_API_KEY production
 npx vercel@latest env add OPENROUTER_MODEL production
 ```
-For `OPENROUTER_MODEL` enter `openai/gpt-4.1-nano`. Then deploy for real:
+For `OPENROUTER_MODEL` enter `openai/gpt-4.1-nano`.
+
+Optional backup model, used by OpenRouter only if the first one fails (rate limit, outage). It must
+also be a **non-reasoning** model. `qwen/qwen3-235b-a22b-2507` scored 9/10 in the M2 comparison (slower,
+but a different provider than OpenAI). To check one first, put it in `apps/server/.env` as
+`OPENROUTER_MODEL` for a moment and run `npm run smoke`.
+```
+npx vercel@latest env add OPENROUTER_FALLBACK_MODEL production
+```
+Then deploy for real:
 ```
 npx vercel@latest --prod
 ```
@@ -39,6 +48,9 @@ Expected: `{"ok":true}` and **8/8 passed**.
 - `.env` is never uploaded (`.vercelignore`); the key only lives in Vercel's settings.
 - Make sure the OpenRouter key has a **credit limit** (OpenRouter dashboard → Keys). That's the real
   cost cap.
+- **After M14, deploy again** (`npx vercel@latest --prod` from `apps/server`): Home now talks to the
+  new `/agent` endpoint. An older deployment doesn't have it, so every request would fail with
+  "Couldn't understand that". Check it with `npm run eval -- https://<your-url> --agent`.
 
 ---
 
@@ -69,6 +81,16 @@ npx expo start
 Open the **FlowPay** app you just installed (not Expo Go) and scan the QR code from inside it.
 
 > Still want Expo Go (no mic)? Use `npm run start:go` instead of `npx expo start`.
+
+> **After the QR scan (2026-10-22): build again.** `expo-camera` is a native module, so a development
+> build made before it can't scan (Settings → Add payee → Scan says "not available"; nothing crashes).
+> Run the `build` command above once more and install the new APK. Expo Go can scan already.
+
+> **After M13: build again.** M13 added `expo-notifications` (payment reminders), a native module.
+> A development build made before M13 doesn't contain it: the app still works, but saving a reminder
+> says "Reminders need notifications, which aren't available in this build". Run the `build` command
+> above once more and install the new APK. Reminders also work in Expo Go (local notifications are
+> supported there on Android).
 
 ---
 
@@ -111,3 +133,7 @@ Install the APK from the link it prints. This is a normal app: no laptop needed.
 ## 5. Final check
 
 Go through `docs/TEST-CHECKLIST.md` on the release APK with Wi-Fi off (mobile data only).
+
+To practise without paying, turn on **Settings → Rehearsal mode**: the whole flow runs, PhonePe never
+opens, and every screen shows "REHEARSAL — no money moves". Turn it off and tap **Clear rehearsal
+payments** before the real demo; **Settings → Ready check** flags both if you forget.

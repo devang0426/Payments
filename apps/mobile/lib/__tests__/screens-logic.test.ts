@@ -74,6 +74,15 @@ describe("confirm lock", () => {
   it("an empty txnRef is never accepted", async () => {
     expect(await createConfirmLock(memoryStore()).acquire("")).toBe(false);
   });
+
+  it("two different payments confirmed at the same moment → both locks are saved", async () => {
+    const storage = memoryStore();
+    const lock = createConfirmLock(storage);
+    expect(await Promise.all([lock.acquire("FP1"), lock.acquire("FP2")])).toEqual([true, true]);
+    const again = createConfirmLock(storage);
+    expect(await again.isUsed("FP1")).toBe(true);
+    expect(await again.isUsed("FP2")).toBe(true);
+  });
 });
 
 describe("resolvePayment", () => {

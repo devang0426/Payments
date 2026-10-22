@@ -1,12 +1,13 @@
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { formatIstDateTime, formatRupees } from "@/lib/format";
 import type { HistoryEntry } from "@/lib/history";
+import { isRehearsalRef } from "@/lib/rehearsal";
 import { strings } from "@/lib/strings";
-import { colors, fontSize } from "@/lib/theme";
+import { colors, fontSize, fonts } from "@/lib/theme";
 
-import { Card, ui } from "./ui";
+import { Card, Text, ui } from "./ui";
 
 // One payment in a list; tapping it opens its receipt.
 export function PaymentRow({ entry }: { entry: HistoryEntry }) {
@@ -24,7 +25,10 @@ export function PaymentRow({ entry }: { entry: HistoryEntry }) {
         </View>
         <View style={ui.row}>
           <Text style={ui.muted}>{formatIstDateTime(entry.createdAt)}</Text>
-          <Text style={[ui.muted, { color: statusColor }]}>{strings.status[entry.status]}</Text>
+          <Text style={[ui.muted, { color: statusColor }]}>
+            {strings.status[entry.status]}
+            {isRehearsalRef(entry.txnRef) ? ` · ${strings.rehearsal.rowTag}` : ""}
+          </Text>
         </View>
       </Card>
     </Pressable>
@@ -32,6 +36,6 @@ export function PaymentRow({ entry }: { entry: HistoryEntry }) {
 }
 
 const styles = StyleSheet.create({
-  name: { fontSize: fontSize.body, fontWeight: "600", color: colors.text, flexShrink: 1 },
-  amount: { fontSize: fontSize.body, fontWeight: "700", color: colors.text },
+  name: { fontSize: fontSize.body, fontFamily: fonts.bold, color: colors.text, flexShrink: 1 },
+  amount: { fontSize: fontSize.body, fontFamily: fonts.bold, color: colors.text },
 });

@@ -1,4 +1,4 @@
-// Spoken amount (Hinglish / Latin-script Hindi / digits) → integer paise.
+// Spoken amount (Hinglish / Hindi in Latin or Devanagari script / digits) → integer paise.
 // The AI only extracts the amount text; this code decides the number. No floats:
 // every quantity is kept in paise (hundredths of a rupee), so 1.5 = 150, 2.5 = 250.
 
@@ -6,10 +6,16 @@ export type ParseAmountResult = { ok: true; paise: number } | { ok: false; reaso
 
 const fail = (reason: string): ParseAmountResult => ({ ok: false, reason });
 
-// 1–99 in rupees, with common Latin spellings.
+// Devanagari spelling variants are folded before any lookup: chandrabindu ँ = anusvara ं (पाँच = पांच)
+// and the nukta ़ is dropped (हज़ार = हजार, डेढ़ = डेढ). Latin text passes through unchanged.
+function fold(word: string): string {
+  return word.normalize("NFD").replace(/़/g, "").replace(/ँ/g, "ं").normalize("NFC");
+}
+
+// 1–99 in rupees, with common Latin and Devanagari spellings.
 const NUMBER_WORDS: Record<string, number> = {};
 function words(value: number, ...spellings: string[]) {
-  for (const s of spellings) NUMBER_WORDS[s] = value;
+  for (const s of spellings) NUMBER_WORDS[fold(s)] = value;
 }
 words(1, "ek");
 words(2, "do");
@@ -111,9 +117,114 @@ words(97, "sattaanve", "sattanve");
 words(98, "atthaanve", "atthanve");
 words(99, "ninyaanve", "ninyanve", "ninyanbe");
 
+// Devanagari (the हिं mic writes these). Spelling variants are folded, see fold().
+words(1, "एक");
+words(2, "दो");
+words(3, "तीन");
+words(4, "चार");
+words(5, "पांच");
+words(6, "छह", "छः", "छै", "छे");
+words(7, "सात");
+words(8, "आठ");
+words(9, "नौ");
+words(10, "दस");
+words(11, "ग्यारह");
+words(12, "बारह");
+words(13, "तेरह");
+words(14, "चौदह");
+words(15, "पंद्रह", "पन्द्रह");
+words(16, "सोलह");
+words(17, "सत्रह");
+words(18, "अठारह", "अट्ठारह");
+words(19, "उन्नीस");
+words(20, "बीस");
+words(21, "इक्कीस");
+words(22, "बाईस");
+words(23, "तेईस");
+words(24, "चौबीस");
+words(25, "पच्चीस");
+words(26, "छब्बीस");
+words(27, "सत्ताईस");
+words(28, "अट्ठाईस");
+words(29, "उनतीस");
+words(30, "तीस");
+words(31, "इकतीस", "इकत्तीस");
+words(32, "बत्तीस");
+words(33, "तैंतीस");
+words(34, "चौंतीस");
+words(35, "पैंतीस");
+words(36, "छत्तीस");
+words(37, "सैंतीस");
+words(38, "अड़तीस");
+words(39, "उनतालीस");
+words(40, "चालीस");
+words(41, "इकतालीस");
+words(42, "बयालीस");
+words(43, "तैंतालीस");
+words(44, "चवालीस", "चौवालीस");
+words(45, "पैंतालीस");
+words(46, "छियालीस");
+words(47, "सैंतालीस");
+words(48, "अड़तालीस");
+words(49, "उनचास");
+words(50, "पचास");
+words(51, "इक्यावन");
+words(52, "बावन");
+words(53, "तिरपन");
+words(54, "चौवन");
+words(55, "पचपन");
+words(56, "छप्पन");
+words(57, "सत्तावन");
+words(58, "अट्ठावन");
+words(59, "उनसठ");
+words(60, "साठ");
+words(61, "इकसठ");
+words(62, "बासठ");
+words(63, "तिरसठ");
+words(64, "चौंसठ");
+words(65, "पैंसठ");
+words(66, "छियासठ");
+words(67, "सड़सठ");
+words(68, "अड़सठ");
+words(69, "उनहत्तर");
+words(70, "सत्तर");
+words(71, "इकहत्तर");
+words(72, "बहत्तर");
+words(73, "तिहत्तर");
+words(74, "चौहत्तर");
+words(75, "पचहत्तर");
+words(76, "छिहत्तर");
+words(77, "सतहत्तर");
+words(78, "अठहत्तर");
+words(79, "उन्यासी", "उनासी");
+words(80, "अस्सी");
+words(81, "इक्यासी");
+words(82, "बयासी");
+words(83, "तिरासी");
+words(84, "चौरासी");
+words(85, "पचासी");
+words(86, "छियासी");
+words(87, "सत्तासी");
+words(88, "अट्ठासी");
+words(89, "नवासी");
+words(90, "नब्बे");
+words(91, "इक्यानवे");
+words(92, "बानवे");
+words(93, "तिरानवे");
+words(94, "चौरानवे");
+words(95, "पचानवे");
+words(96, "छियानवे");
+words(97, "सत्तानवे");
+words(98, "अट्ठानवे");
+words(99, "निन्यानवे");
+
+// Folded keys for the tables below.
+const keys = <T>(table: Record<string, T>): Record<string, T> =>
+  Object.fromEntries(Object.entries(table).map(([k, v]) => [fold(k), v]));
+
 // "sau" multiplies inside a group; the big multipliers close a group.
-const HUNDRED = new Set(["sau"]);
-const BIG_MULTIPLIERS: Record<string, number> = {
+const HUNDRED = new Set(["sau", fold("सौ")]);
+const BIG_MULTIPLIERS: Record<string, number> = keys({
   hazaar: 1000,
   hazar: 1000,
   hajar: 1000,
@@ -123,20 +234,25 @@ const BIG_MULTIPLIERS: Record<string, number> = {
   laakh: 100000,
   lac: 100000,
   lakhs: 100000,
-};
+  "हज़ार": 1000,
+  "लाख": 100000,
+});
 
 // Standalone fractions, in paise per rupee unit (1.5 → 150).
-const FRACTIONS: Record<string, number> = {
+const FRACTIONS: Record<string, number> = keys({
   dedh: 150,
   derh: 150,
   dhai: 250,
   dhaai: 250,
   adhai: 250,
   dhayi: 250,
-};
+  "डेढ़": 150,
+  "ढाई": 250,
+  "अढ़ाई": 250,
+});
 
 // Prefixes that modify the next number: sawa X = X + ¼, saadhe X = X + ½, paune X = X − ¼.
-const PREFIXES: Record<string, { delta: number; alone: number | null }> = {
+const PREFIXES: Record<string, { delta: number; alone: number | null }> = keys({
   sawa: { delta: 25, alone: 125 }, // "sawa sau" = 1.25 × 100
   sava: { delta: 25, alone: 125 },
   saadhe: { delta: 50, alone: null }, // "saadhe sau" isn't said
@@ -145,9 +261,17 @@ const PREFIXES: Record<string, { delta: number; alone: number | null }> = {
   saarhe: { delta: 50, alone: null },
   paune: { delta: -25, alone: 75 }, // "paune sau" = 0.75 × 100
   pone: { delta: -25, alone: 75 },
-};
+  "सवा": { delta: 25, alone: 125 },
+  "साढ़े": { delta: 50, alone: null },
+  "पौने": { delta: -25, alone: 75 },
+});
 
-const CURRENCY = new Set(["₹", "rs", "rs.", "inr", "rupaye", "rupaya", "rupiya", "rupees", "rupee", "rupay", "rupye"]);
+const CURRENCY = new Set(
+  ["₹", "rs", "rs.", "inr", "rupaye", "rupaya", "rupiya", "rupees", "rupee", "rupay", "rupye", "रुपये", "रुपए", "रुपया", "रुपय", "रु", "रु."].map(fold),
+);
+
+// A trailing "do" / "दो" after an amount is the verb "give" ("paanch sau do", "पाँच सौ दो").
+const GIVE = new Set(["do", fold("दो")]);
 
 const DEVANAGARI_DIGITS = "०१२३४५६७८९";
 
@@ -167,7 +291,7 @@ function tokenize(text: string): string[] {
   s = s.replace(/(₹|\brs\.?)(?=\d)/g, "$1 "); // "₹500", "rs.500" → separate tokens
   s = s.replace(/(\d)(₹|rs\b)/g, "$1 $2"); // "500rs"
   s = s.replace(/(\d)k\b/g, "$1 k"); // "1.5k" → "1.5 k"
-  return s.split(/\s+/).filter(Boolean);
+  return s.split(/\s+/).filter(Boolean).map(fold);
 }
 
 type Token =
@@ -197,8 +321,8 @@ export function parseAmount(text: string): ParseAmountResult {
   let rawTokens = tokenize(text).filter((t) => !CURRENCY.has(t));
   if (rawTokens.length === 0) return fail("No amount found");
 
-  // A trailing "do" after an amount is the verb "give" ("paanch sau do").
-  if (rawTokens.length > 1 && rawTokens[rawTokens.length - 1] === "do") {
+  // A trailing "do" / "दो" after an amount is the verb "give" ("paanch sau do").
+  if (rawTokens.length > 1 && GIVE.has(rawTokens[rawTokens.length - 1]!)) {
     rawTokens = rawTokens.slice(0, -1);
   }
 

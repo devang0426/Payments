@@ -62,11 +62,34 @@ describe("parseText → server /parse", () => {
     expect(await parseText("x", API)).toEqual({ ok: false, error: "FAILED" });
   });
 
-  it("network failure → FAILED", async () => {
+  it("network failure twice → FAILED after exactly one retry", async () => {
     mockFetch(async () => {
       throw new TypeError("Network request failed");
     });
     expect(await parseText("x", API)).toEqual({ ok: false, error: "FAILED" });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("network failure, then an answer → the retry's result", async () => {
+    let calls = 0;
+    mockFetch(async () => {
+      if (++calls === 1) throw new TypeError("Network request failed");
+      return { ok: true, json: async () => ({ ok: true, name: "Mummy", amount: { kind: "paise", paise: 50000 } }) };
+    });
+    expect(await parseText("Mummy ko 500", API)).toEqual({ ok: true, name: "Mummy", amount: { kind: "paise", paise: 50000 } });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["NO_NAME", json({ ok: false, error: "NO_NAME" })],
+    ["NO_AMOUNT", json({ ok: false, error: "NO_AMOUNT" })],
+    ["AI_FAILED", json({ ok: false, error: "AI_FAILED" }, false)],
+    ["an unexpected body", json("hello")],
+    ["a body that isn't JSON", async () => ({ ok: true, json: async () => Promise.reject(new SyntaxError("bad")) })],
+  ])("no retry when the server answered (%s)", async (_label, impl) => {
+    mockFetch(impl);
+    await parseText("x", API);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("body that isn't JSON → FAILED", async () => {
@@ -74,7 +97,7 @@ describe("parseText → server /parse", () => {
     expect(await parseText("x", API)).toEqual({ ok: false, error: "FAILED" });
   });
 
-  it("times out after 12 seconds → FAILED", async () => {
+  it("each attempt times out after 7 s; two timeouts (14 s, under 15 s) → FAILED", async () => {
     jest.useFakeTimers();
     mockFetch(
       (_url, init) =>
@@ -82,9 +105,19 @@ describe("parseText → server /parse", () => {
           init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
         }),
     );
-    const pending = parseText("x", API);
-    jest.advanceTimersByTime(12_000);
+    let settled = false;
+    const pending = parseText("x", API).finally(() => {
+      settled = true;
+    });
+    await jest.advanceTimersByTimeAsync(6_999);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(6_999);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
     expect(await pending).toEqual({ ok: false, error: "FAILED" });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     jest.useRealTimers();
   });
 

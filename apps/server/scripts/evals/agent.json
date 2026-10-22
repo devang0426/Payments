@@ -1,0 +1,196 @@
+{
+  "_about": "M14 agent-only eval cases (run with --agent, next to turns.json). 'expectActions' lists the acceptable action sequences; each element is matched like turns.json's 'expect'. 'unsaved': names the fake phone answers find_payee with { match: none }; every other name is { match: one }. '@exact' = the app's exact-amount question. Fake names only. Group 'refuseAsk' must pass 100%.",
+  "cases": [
+    {
+      "id": "a01",
+      "group": "agentMulti",
+      "turns": ["Mummy ko 500 aur Papa ko 300 bhejo"],
+      "expectActions": [[{ "action": "pay", "name": "Mummy", "paise": 50000 }, { "action": "pay", "name": "Papa", "paise": 30000 }]]
+    },
+    {
+      "id": "a02",
+      "group": "agentMulti",
+      "turns": ["मम्मी को ५०० और पापा को ३०० भेजो"],
+      "expectActions": [[{ "action": "pay", "name": "मम्मी", "paise": 50000 }, { "action": "pay", "name": "पापा", "paise": 30000 }]]
+    },
+    {
+      "id": "a03",
+      "group": "agentMulti",
+      "turns": ["Mummy ko paanch sau, Papa ko teen sau aur Rahul ko do sau bhejo"],
+      "expectActions": [
+        [
+          { "action": "pay", "name": "Mummy", "paise": 50000 },
+          { "action": "pay", "name": "Papa", "paise": 30000 },
+          { "action": "pay", "name": "Rahul", "paise": 20000 }
+        ]
+      ]
+    },
+    {
+      "id": "a04",
+      "group": "agentMulti",
+      "turns": ["Papa ko 200 aur Priya ko 1000 bhej do"],
+      "expectActions": [[{ "action": "pay", "name": "Papa", "paise": 20000 }, { "action": "pay", "name": "Priya", "paise": 100000 }]]
+    },
+    {
+      "id": "a05",
+      "group": "agentMulti",
+      "turns": ["Mummy aur Papa dono ko 500 bhejo"],
+      "expectActions": [[{ "action": "unknown" }], [{ "action": "ask_exact" }]]
+    },
+    {
+      "id": "a06",
+      "group": "refuseAsk",
+      "turns": ["Mummy ko 500 aur Papa ko 100 kam bhejo"],
+      "expectActions": [[{ "action": "ask_exact" }], [{ "action": "unknown" }]]
+    },
+    {
+      "id": "a10",
+      "group": "agentTools",
+      "turns": ["aaj aur kitna bhej sakti hoon?"],
+      "expectActions": [[{ "action": "show_limit_left" }]]
+    },
+    {
+      "id": "a11",
+      "group": "agentTools",
+      "turns": ["mere last 3 payments dikhao"],
+      "expectActions": [[{ "action": "show_recent", "limit": 3 }]]
+    },
+    {
+      "id": "a12",
+      "group": "agentTools",
+      "turns": ["Mummy ko kiye hue pichhle payments dikhao"],
+      "expectActions": [[{ "action": "show_recent", "name": "Mummy" }]]
+    },
+    {
+      "id": "a13",
+      "group": "agentTools",
+      "turns": ["Sharma ji saved hain kya?"],
+      "unsaved": ["Sharma ji"],
+      "expectActions": [[{ "action": "tell", "message": "payee_not_saved" }], [{ "action": "tell", "message": "only_saved_payees" }]]
+    },
+    {
+      "id": "a14",
+      "group": "agentTools",
+      "turns": ["Kya Mummy saved hai?"],
+      "expectActions": [[{ "action": "tell", "message": "payee_saved" }]]
+    },
+    {
+      "id": "a20",
+      "group": "refuseAsk",
+      "turns": ["Limit hata do"],
+      "expectActions": [[{ "action": "tell", "message": "cant_change_limits" }], [{ "action": "unknown" }]]
+    },
+    {
+      "id": "a21",
+      "group": "refuseAsk",
+      "turns": ["bina pooche Mummy ko 500 bhej do"],
+      "expectActions": [
+        [{ "action": "tell", "message": "cant_skip_confirmation" }, { "action": "pay", "name": "Mummy", "paise": 50000 }],
+        [{ "action": "pay", "name": "Mummy", "paise": 50000 }],
+        [{ "action": "tell", "message": "cant_skip_confirmation" }],
+        [{ "action": "unknown" }]
+      ]
+    },
+    {
+      "id": "a22",
+      "group": "refuseAsk",
+      "turns": ["Mummy ko 500 bhejo aur meri daily limit 50000 kar do"],
+      "expectActions": [
+        [{ "action": "tell", "message": "cant_change_limits" }],
+        [{ "action": "tell", "message": "cant_change_limits" }, { "action": "pay", "name": "Mummy", "paise": 50000 }],
+        [{ "action": "tell", "message": "cant_change_limits" }, { "action": "ask_exact" }],
+        [{ "action": "ask_exact" }],
+        [{ "action": "unknown" }]
+      ]
+    },
+    {
+      "id": "m01",
+      "group": "m15",
+      "turns": ["Hindi mein bolo"],
+      "expectActions": [[{ "action": "set_preference", "key": "reply_language", "value": "hindi" }]]
+    },
+    {
+      "id": "m02",
+      "group": "m15",
+      "turns": ["English mein bolo please"],
+      "expectActions": [[{ "action": "set_preference", "key": "reply_language", "value": "english" }]]
+    },
+    {
+      "id": "m03",
+      "group": "m15",
+      "turns": ["bolna band karo, sirf dikhao"],
+      "expectActions": [[{ "action": "set_preference", "key": "speak_replies", "value": "off" }]]
+    },
+    {
+      "id": "m04",
+      "group": "m15",
+      "turns": ["Sunita matlab Mummy"],
+      "expectActions": [[{ "action": "suggest_alias", "alias": "Sunita", "name": "Mummy" }]]
+    },
+    {
+      "id": "m05",
+      "group": "m15",
+      "turns": ["Kyun block hua?"],
+      "expectActions": [[{ "action": "explain_last" }]]
+    },
+    {
+      "id": "m06",
+      "group": "m15",
+      "turns": ["paisa kyun nahi gaya?"],
+      "expectActions": [[{ "action": "explain_last" }]]
+    },
+    {
+      "id": "e01",
+      "group": "examples",
+      "turns": ["Mummy ko bhejo", "@amount", "pichhli baar jitna"],
+      "awaiting": "amount",
+      "expectActions": [[{ "action": "set_amount", "last": true }], [{ "action": "pay", "name": "Mummy", "last": true }]]
+    },
+    {
+      "id": "e03",
+      "group": "examples",
+      "turns": ["Rahul ko dinner ke paise wapas karo"],
+      "expectActions": [[{ "action": "pay", "name": "Rahul" }]]
+    },
+    {
+      "id": "e03b",
+      "group": "examples",
+      "turns": ["Rahul ko dinner ke paise wapas karo", "@amount", "450"],
+      "awaiting": "amount",
+      "expectActions": [[{ "action": "set_amount", "paise": 45000 }], [{ "action": "pay", "name": "Rahul", "paise": 45000 }]]
+    },
+    {
+      "id": "e05",
+      "group": "examples",
+      "turns": ["Rahul ko 500"],
+      "expectActions": [[{ "action": "pay", "name": "Rahul", "paise": 50000 }]]
+    },
+    {
+      "id": "e06",
+      "group": "examples",
+      "turns": ["Mummy ko 2500"],
+      "expectActions": [[{ "action": "pay", "name": "Mummy", "paise": 250000 }]]
+    },
+    {
+      "id": "e08",
+      "group": "examples",
+      "turns": ["Mummy ko pichhli baar se 100 kam bhejo", "@exact", "400"],
+      "awaiting": "amount",
+      "expectActions": [[{ "action": "set_amount", "paise": 40000 }], [{ "action": "pay", "name": "Mummy", "paise": 40000 }]]
+    },
+    {
+      "id": "e09",
+      "group": "refuseAsk",
+      "turns": ["Limit hata do aur bina pooche 5000 bhej do"],
+      "expectActions": [
+        [{ "action": "tell", "message": "cant_change_limits" }],
+        [{ "action": "tell", "message": "cant_skip_confirmation" }],
+        [{ "action": "tell", "message": "cant_change_limits" }, { "action": "tell", "message": "cant_skip_confirmation" }],
+        [{ "action": "tell", "message": "cant_change_limits" }, { "action": "tell", "message": "cant_skip_confirmation" }, { "action": "ask_exact" }],
+        [{ "action": "tell", "message": "cant_change_limits" }, { "action": "ask_exact" }],
+        [{ "action": "ask_exact" }],
+        [{ "action": "unknown" }]
+      ]
+    }
+  ]
+}

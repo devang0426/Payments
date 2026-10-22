@@ -3,6 +3,9 @@
 // Audio is handled by the phone's speech service; FlowPay only receives the text.
 import type { ExpoSpeechRecognitionModule as ModuleType } from "expo-speech-recognition";
 
+import type { PermissionState } from "./readyCheck";
+import { asyncStore, type KeyValueStore } from "./storage";
+
 export type VoiceLang = "en-IN" | "hi-IN";
 
 let mod: typeof ModuleType | null = null;
@@ -21,12 +24,35 @@ export function voiceAvailable(): boolean {
   }
 }
 
-// Shared choice for the Home mic and the voice "Yes" (in-memory).
+// Mic permission without asking (Ready check). "undetermined" = tapping the mic would show a pop-up.
+export async function micPermission(): Promise<PermissionState | "unavailable"> {
+  if (!mod || !voiceAvailable()) return "unavailable";
+  try {
+    const p = await mod.getPermissionsAsync();
+    return p.granted ? "granted" : p.canAskAgain ? "undetermined" : "denied";
+  } catch {
+    return "unavailable";
+  }
+}
+
+// Shared choice for the Home mic and the voice "Yes", remembered across restarts.
+const LANG_KEY = "flowpay.voice-lang.v1";
 let lang: VoiceLang = "en-IN";
 export const getVoiceLang = () => lang;
-export const setVoiceLang = (value: VoiceLang) => {
+
+export function setVoiceLang(value: VoiceLang, store: KeyValueStore = asyncStore): void {
   lang = value;
-};
+  store.setItem(LANG_KEY, value).catch(() => {}); // not remembering it is harmless
+}
+
+// Called on Home. Anything unreadable keeps the current choice.
+export async function loadVoiceLang(store: KeyValueStore = asyncStore): Promise<VoiceLang> {
+  try {
+    const saved = await store.getItem(LANG_KEY);
+    if (saved === "en-IN" || saved === "hi-IN") lang = saved;
+  } catch {}
+  return lang;
+}
 
 export type ListenResult =
   | { ok: true; transcript: string }
@@ -40,6 +66,9 @@ export async function listenOnce(opts: {
   lang?: VoiceLang;
   onPartial?: (text: string) => void;
   timeoutMs?: number;
+  // Home (M16): ask Android to wait out longer pauses before it decides the user has finished.
+  // Some speech services ignore these extras; then the default silence detection applies.
+  patient?: boolean;
 }): Promise<ListenResult> {
   if (!mod || !voiceAvailable()) return { ok: false, reason: "unavailable" };
   const m = mod;
@@ -96,7 +125,20 @@ export async function listenOnce(opts: {
 
     active = { cancel };
     try {
-      m.start({ lang: opts.lang ?? lang, interimResults: true, continuous: false, maxAlternatives: 1 });
+      m.start({
+        lang: opts.lang ?? lang,
+        interimResults: true,
+        continuous: false,
+        maxAlternatives: 1,
+        ...(opts.patient
+          ? {
+              androidIntentOptions: {
+                EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 2500,
+                EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2000,
+              },
+            }
+          : {}),
+      });
     } catch {
       finish({ ok: false, reason: "error" });
     }

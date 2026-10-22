@@ -1,15 +1,25 @@
+// Receipt. M16: the result is also said out loud ("Done. 600 rupees sent to Ramesh."), with a big
+// ✓ / ✕ so she can see it at a glance (lib/voiceFlow receiptSpeech).
+// M17: a regular payment (same amount to the same payee, Done twice) offers a monthly reminder; the
+// reminder card still asks for the yes.
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import * as Speech from "expo-speech";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Share, StyleSheet, View } from "react-native";
 
-import { Button, Card, Notice, Screen, ui } from "@/components/ui";
-import { formatIstDateTime, formatRupees } from "@/lib/format";
+import { RehearsalBanner } from "@/components/RehearsalBanner";
+import { Button, Card, Notice, Screen, Text, ui } from "@/components/ui";
+import { formatIstDateTime, formatRupees, formatWhen } from "@/lib/format";
 import type { HistoryEntry, PaymentStatus } from "@/lib/history";
 import { paymentInFlight } from "@/lib/pay";
-import { historyStore, payeeStore } from "@/lib/stores";
+import { isRehearsalRef, txnRefFor } from "@/lib/rehearsal";
+import { nextReminderAt, suggestMonthlyReminder, type When } from "@/lib/reminders";
+import { speechTexts } from "@/lib/speech";
+import { speechLanguage } from "@/lib/speechLang";
+import { historyStore, lastOutcome, payeeStore, prefsStore, rehearsal, reminderStore } from "@/lib/stores";
 import { strings } from "@/lib/strings";
-import { colors, fontSize, spacing } from "@/lib/theme";
-import { makeTxnRef } from "@/lib/upi";
+import { colors, fontSize, fonts, spacing } from "@/lib/theme";
+import { receiptSpeech } from "@/lib/voiceFlow";
 
 const s = strings.receipt;
 
@@ -19,6 +29,8 @@ const statusColor: Record<PaymentStatus, string> = {
   unknown: colors.muted,
   pending: colors.muted,
 };
+
+const statusIcon: Record<PaymentStatus, string> = { success: "✓", failed: "✕", unknown: "?", pending: "…" };
 
 export default function ReceiptScreen() {
   const { txnRef = "", recovered, launchFailed } = useLocalSearchParams<{
@@ -30,21 +42,33 @@ export default function ReceiptScreen() {
   const [saving, setSaving] = useState(false);
 
   const [payeeExists, setPayeeExists] = useState(false);
+  const [suggested, setSuggested] = useState<When | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([historyStore.load(), payeeStore.load()]).then(([{ entries }, { payees }]) => {
+    Promise.all([historyStore.load(), payeeStore.load(), reminderStore.list()]).then(([{ entries }, { payees }, reminders]) => {
       const found = entries.find((e) => e.txnRef === txnRef) ?? null;
       setEntry(found);
       setPayeeExists(!!found && payees.some((p) => p.id === found.payeeId));
+      const offer = found && suggestMonthlyReminder({ entry: found, history: entries, reminders, now: Date.now() });
+      setSuggested(offer ? { kind: "monthly", day: offer.day } : null);
     });
   }, [txnRef]);
 
+  function remindMonthly() {
+    if (!entry || !suggested) return;
+    router.push({
+      pathname: "/reminder",
+      params: { payeeId: entry.payeeId, when: JSON.stringify(suggested), amountPaise: String(entry.amountPaise) },
+    });
+  }
+
   // Same payee + amount, new txnRef. Goes to the Confirm card, which re-checks the rules.
-  function payAgain() {
+  async function payAgain() {
     if (!entry) return;
+    const newRef = txnRefFor(await rehearsal.load());
     router.replace({
       pathname: "/confirm",
-      params: { payeeId: entry.payeeId, amountPaise: String(entry.amountPaise), txnRef: makeTxnRef() },
+      params: { payeeId: entry.payeeId, amountPaise: String(entry.amountPaise), txnRef: newRef },
     });
   }
 
@@ -63,8 +87,35 @@ export default function ReceiptScreen() {
   const needsAnswer =
     !!entry && (entry.status === "pending" || entry.status === "unknown") && paymentInFlight() !== entry.txnRef;
 
+  // Say the result once per status (again after the user answers "Did it go through?").
+  const spokenFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!entry) return;
+    const key = `${entry.status}:${needsAnswer}`;
+    if (spokenFor.current === key) return;
+    spokenFor.current = key;
+    // M15 "Kyun nahi gaya?": the result, as PhonePe reported it (or as she answered).
+    if (!needsAnswer && entry.status !== "pending") {
+      lastOutcome.set({ kind: "paid", status: entry.status, payeeName: entry.payeeName, amountPaise: entry.amountPaise, launchFailed: launchFailed === "1" });
+    }
+    if (!prefsStore.get().speakReplies) return;
+    speechLanguage().then((lang) => {
+      const line = receiptSpeech(speechTexts(lang), {
+        status: entry.status,
+        amountPaise: entry.amountPaise,
+        name: entry.payeeName,
+        rehearsal: isRehearsalRef(entry.txnRef),
+        launchFailed: launchFailed === "1",
+        needsAnswer,
+      });
+      if (line) Speech.speak(line, { language: lang });
+    });
+  }, [entry, needsAnswer, launchFailed]);
+
   return (
     <Screen>
+      <RehearsalBanner />
+      {entry && isRehearsalRef(entry.txnRef) && <Notice tone="info" text={strings.rehearsal.receiptNote} />}
       {recovered === "1" && <Notice tone="info" text={s.recovered} />}
       {launchFailed === "1" && <Notice text={strings.confirm.noUpiApp} />}
       {entry === undefined ? (
@@ -73,6 +124,9 @@ export default function ReceiptScreen() {
         <Text style={ui.body}>—</Text>
       ) : (
         <Card>
+          <View style={[styles.icon, { backgroundColor: statusColor[entry.status] }]}>
+            <Text style={styles.iconText}>{statusIcon[entry.status]}</Text>
+          </View>
           <Text style={[styles.status, { color: statusColor[entry.status] }]}>{strings.status[entry.status]}</Text>
           <Row label={s.amount} value={formatRupees(entry.amountPaise)} big />
           <Row label={s.to} value={entry.payeeName} />
@@ -90,10 +144,20 @@ export default function ReceiptScreen() {
         </View>
       ) : (
         <View style={ui.gap}>
+          {suggested && payeeExists && (
+            <Button
+              variant="secondary"
+              label={strings.suggest.monthly(formatWhen(suggested, nextReminderAt(suggested, Date.now())))}
+              onPress={remindMonthly}
+            />
+          )}
           {entry && payeeExists && (
             <Button label={s.payAgain(entry.payeeName, formatRupees(entry.amountPaise))} onPress={payAgain} />
           )}
-          {entry && <Button variant="secondary" label={s.share} onPress={() => shareReceipt(entry)} />}
+          {/* A rehearsal receipt is never shared: it would look like a real payment. */}
+          {entry && !isRehearsalRef(entry.txnRef) && (
+            <Button variant="secondary" label={s.share} onPress={() => shareReceipt(entry)} />
+          )}
           <Button variant={entry && payeeExists ? "secondary" : "primary"} label={strings.common.home} onPress={goHome} />
         </View>
       )}
@@ -125,9 +189,11 @@ function Row({ label, value, big }: { label: string; value: string; big?: boolea
 }
 
 const styles = StyleSheet.create({
-  status: { fontSize: 32, fontWeight: "800" },
+  status: { fontSize: 32, fontFamily: fonts.bold, textAlign: "center" },
+  icon: { alignSelf: "center", width: 96, height: 96, borderRadius: 48, alignItems: "center", justifyContent: "center" },
+  iconText: { fontSize: 52, lineHeight: 60, fontFamily: fonts.bold, color: colors.primaryText },
   row: { gap: 2, marginTop: spacing.sm },
-  value: { fontSize: fontSize.body, color: colors.text, fontWeight: "600" },
-  big: { fontSize: 28, fontWeight: "800" },
-  question: { fontSize: fontSize.button, fontWeight: "700", color: colors.text },
+  value: { fontSize: fontSize.body, color: colors.text, fontFamily: fonts.bold },
+  big: { fontSize: 28 },
+  question: { fontSize: fontSize.button, fontFamily: fonts.bold },
 });

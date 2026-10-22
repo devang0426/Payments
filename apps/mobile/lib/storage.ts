@@ -15,6 +15,18 @@ export const secureStore: KeyValueStore = {
   removeItem: (key) => SecureStore.deleteItemAsync(key),
 };
 
+// One change at a time, in the order started. Each store reads, changes and writes back its data;
+// without a queue, two changes at the same moment could each write over the other.
+// A failed job rejects only its own caller; the next job still runs.
+export function createWriteQueue() {
+  let tail: Promise<unknown> = Promise.resolve();
+  return function run<T>(job: () => Promise<T>): Promise<T> {
+    const result = tail.then(job); // tail never rejects (see below)
+    tail = result.catch(() => {});
+    return result;
+  };
+}
+
 export const asyncStore: KeyValueStore = {
   getItem: (key) => AsyncStorage.getItem(key),
   setItem: (key, value) => AsyncStorage.setItem(key, value),

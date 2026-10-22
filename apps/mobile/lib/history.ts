@@ -2,7 +2,7 @@
 // A "pending" entry is written before PhonePe opens (M5), so a killed app can't lose a payment.
 import { z } from "zod";
 import { istDayKey } from "./rules";
-import { asyncStore, type KeyValueStore } from "./storage";
+import { asyncStore, createWriteQueue, type KeyValueStore } from "./storage";
 
 const KEY = "flowpay.history.v1";
 const BACKUP_KEY = "flowpay.history.corrupt-backup";
@@ -34,6 +34,8 @@ const ALLOWED: Record<PaymentStatus, readonly PaymentStatus[]> = {
 const defaultId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function createHistoryStore(store: KeyValueStore = asyncStore, newId: () => string = defaultId) {
+  const queue = createWriteQueue(); // every change below reads, changes and writes as one step
+
   async function read(): Promise<{ entries: HistoryEntry[]; corrupt: boolean; raw: string | null }> {
     const raw = await store.getItem(KEY);
     if (raw === null) return { entries: [], corrupt: false, raw };
@@ -67,46 +69,54 @@ export function createHistoryStore(store: KeyValueStore = asyncStore, newId: () 
     load,
 
     // Newest first.
-    async add(input: NewHistoryEntry): Promise<{ ok: true; entry: HistoryEntry } | { ok: false; error: "INVALID" | "DUPLICATE_TXN_REF" }> {
-      const parsed = HistoryEntrySchema.safeParse({ id: newId(), ...input });
-      if (!parsed.success) return { ok: false, error: "INVALID" };
-      const current = await read();
-      if (current.entries.some((e) => e.txnRef === parsed.data.txnRef)) {
-        return { ok: false, error: "DUPLICATE_TXN_REF" };
-      }
-      const entries = [parsed.data, ...current.entries].sort((a, b) => b.createdAt - a.createdAt);
-      await write(entries, current);
-      return { ok: true, entry: parsed.data };
+    add(input: NewHistoryEntry): Promise<{ ok: true; entry: HistoryEntry } | { ok: false; error: "INVALID" | "DUPLICATE_TXN_REF" }> {
+      return queue(async () => {
+        const parsed = HistoryEntrySchema.safeParse({ id: newId(), ...input });
+        if (!parsed.success) return { ok: false, error: "INVALID" };
+        const current = await read();
+        if (current.entries.some((e) => e.txnRef === parsed.data.txnRef)) {
+          return { ok: false, error: "DUPLICATE_TXN_REF" };
+        }
+        const entries = [parsed.data, ...current.entries].sort((a, b) => b.createdAt - a.createdAt);
+        await write(entries, current);
+        return { ok: true, entry: parsed.data };
+      });
     },
 
-    async updateStatus(
+    updateStatus(
       txnRef: string,
       status: PaymentStatus,
     ): Promise<{ ok: true } | { ok: false; error: "NOT_FOUND" | "NOT_ALLOWED" }> {
-      const current = await read();
-      const existing = current.entries.find((e) => e.txnRef === txnRef);
-      if (!existing) return { ok: false, error: "NOT_FOUND" };
-      if (!ALLOWED[existing.status].includes(status)) return { ok: false, error: "NOT_ALLOWED" };
-      await write(
-        current.entries.map((e) => (e.txnRef === txnRef ? { ...e, status } : e)),
-        current,
-      );
-      return { ok: true };
+      return queue(async () => {
+        const current = await read();
+        const existing = current.entries.find((e) => e.txnRef === txnRef);
+        if (!existing) return { ok: false, error: "NOT_FOUND" };
+        if (!ALLOWED[existing.status].includes(status)) return { ok: false, error: "NOT_ALLOWED" };
+        await write(
+          current.entries.map((e) => (e.txnRef === txnRef ? { ...e, status } : e)),
+          current,
+        );
+        return { ok: true };
+      });
     },
 
     // Settings → "Clear unreadable history" (and DEV "clear all"). Keeps a backup if it was unreadable.
-    async clear(): Promise<void> {
-      const current = await read();
-      if (current.corrupt && current.raw !== null) await store.setItem(BACKUP_KEY, current.raw);
-      await store.removeItem(KEY);
+    clear(): Promise<void> {
+      return queue(async () => {
+        const current = await read();
+        if (current.corrupt && current.raw !== null) await store.setItem(BACKUP_KEY, current.raw);
+        await store.removeItem(KEY);
+      });
     },
 
-    // DEV: remove the seeded fake entries (their txnRef starts with the given prefix).
-    async removeByTxnRefPrefix(prefix: string): Promise<number> {
-      const current = await read();
-      const kept = current.entries.filter((e) => !e.txnRef.startsWith(prefix));
-      await write(kept, current);
-      return current.entries.length - kept.length;
+    // Remove entries whose txnRef starts with the prefix (DEV seed, rehearsal payments).
+    removeByTxnRefPrefix(prefix: string): Promise<number> {
+      return queue(async () => {
+        const current = await read();
+        const kept = current.entries.filter((e) => !e.txnRef.startsWith(prefix));
+        await write(kept, current);
+        return current.entries.length - kept.length;
+      });
     },
 
     async listPending(): Promise<HistoryEntry[]> {

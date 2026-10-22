@@ -8,6 +8,9 @@ const cases: [text: string, expected: string][] = [
   ["Papa ko dhai sau", '{"ok":true,"name":"Papa","amount":{"kind":"paise","paise":25000}}'],
   ["Rahul ko 1.5k", '{"ok":true,"name":"Rahul","amount":{"kind":"paise","paise":150000}}'],
   ["मम्मी को ५०० भेजो", '{"ok":true,"name":"मम्मी","amount":{"kind":"paise","paise":50000}}'],
+  // M11: Devanagari number words
+  ["मम्मी को पाँच सौ भेजो", '{"ok":true,"name":"मम्मी","amount":{"kind":"paise","paise":50000}}'],
+  ["राहुल को दो हज़ार भेजो", '{"ok":true,"name":"राहुल","amount":{"kind":"paise","paise":200000}}'],
   ["Mummy ko pichhli baar jitna bhejo", '{"ok":true,"name":"Mummy","amount":{"kind":"last"}}'],
   ["मम्मी को पिछली बार जितना भेजो", '{"ok":true,"name":"मम्मी","amount":{"kind":"last"}}'],
   ["Mummy ko bhejo", '{"ok":false,"error":"NO_AMOUNT"}'],

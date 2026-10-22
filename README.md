@@ -57,6 +57,7 @@ steps: see **[docs/DEPLOY.md](docs/DEPLOY.md)**. Before the demo, go through
 | File | Purpose |
 |---|---|
 | `CLAUDE.md` | Hard rules and conventions (Claude Code reads it every session) |
+| `FlowPay.html` | The visual theme (colours, font, buttons); open it in a browser |
 | `docs/ARCHITECTURE.md` | Design, data privacy, failure cases |
 | `docs/PROGRESS.md` | What was built, decisions, known issues, log |
 | `docs/PROMPTS.md` | The milestone prompts M0–M8 |

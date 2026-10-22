@@ -1,4 +1,4 @@
-// UPI intent URI + PhonePe response parsing. Pure part only (launching comes in M5).
+// UPI intent URI + PhonePe response parsing. Pure; launching is in upiLaunch.ts.
 // Money is integer paise; the "am" string is built without floats.
 import type { PaymentStatus } from "./history";
 
@@ -111,4 +111,60 @@ export function makeTxnRef(now: number = Date.now()): string {
     .toString()
     .padStart(6, "0");
   return `FP${now}${String(counter).padStart(3, "0")}${random}`;
+}
+
+// A scanned UPI QR → the UPI ID to save + a suggested name. It only fills the Add payee form: the
+// payee is saved like any other (fingerprint/PIN, 24 h new-payee limit) and a QR never pays.
+// Everything in a QR was written by its owner, so only `pa` is used; `pn` is a suggestion to check,
+// and any amount (`am`), note (`tn`) or reference (`tr`) is ignored. Never throws.
+export type QrPayee =
+  | { ok: true; vpa: string; name?: string; merchant: boolean }
+  | { ok: false; reason: "notUpi" | "noVpa" | "badVpa" | "multiple" };
+
+const MAX_QR_LENGTH = 1000;
+const QR_NAME_MAX = 50;
+
+function decodeQrPart(part: string): string {
+  const spaced = part.replace(/\+/g, " ");
+  try {
+    return decodeURIComponent(spaced);
+  } catch {
+    return spaced; // broken %-encoding: keep it as written
+  }
+}
+
+function cleanQrName(name: string | undefined): string | undefined {
+  const cleaned = (name ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, QR_NAME_MAX)
+    .trim();
+  return cleaned || undefined;
+}
+
+export function parseUpiQr(raw: string): QrPayee {
+  const text = raw.trim();
+  if (!text || text.length > MAX_QR_LENGTH) return { ok: false, reason: "notUpi" };
+  if (VPA_PATTERN.test(text)) return { ok: true, vpa: text.toLowerCase(), merchant: false }; // just a UPI ID
+  const link = /^upi:\/\/pay\?([\s\S]*)$/i.exec(text);
+  if (!link) return { ok: false, reason: "notUpi" };
+
+  const params = new Map<string, string[]>();
+  for (const part of link[1]!.split("&")) {
+    if (!part) continue;
+    const eq = part.indexOf("=");
+    const key = (eq < 0 ? part : part.slice(0, eq)).toLowerCase();
+    params.set(key, [...(params.get(key) ?? []), eq < 0 ? "" : decodeQrPart(part.slice(eq + 1))]);
+  }
+
+  const vpas = [...new Set((params.get("pa") ?? []).map((v) => v.trim().toLowerCase()).filter(Boolean))];
+  if (vpas.length === 0) return { ok: false, reason: "noVpa" };
+  if (vpas.length > 1) return { ok: false, reason: "multiple" };
+  const vpa = vpas[0]!;
+  if (!VPA_PATTERN.test(vpa)) return { ok: false, reason: "badVpa" };
+
+  const name = cleanQrName(params.get("pn")?.[0]);
+  const mc = params.get("mc")?.[0]?.trim();
+  return { ok: true, vpa, ...(name ? { name } : {}), merchant: !!mc && mc !== "0000" };
 }

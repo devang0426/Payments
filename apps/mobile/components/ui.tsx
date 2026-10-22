@@ -1,17 +1,25 @@
-// Shared building blocks: big, high-contrast controls so parents can use the app too.
+// Shared building blocks: big, high-contrast controls so parents can use the app too. The look
+// (colours, font, pill buttons, white cards) comes from the UI design, FlowPay.html.
 import type { ReactNode } from "react";
 import {
   Pressable,
+  Text as RNText,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
   type TextInputProps,
+  type TextProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { colors, fontSize, radius, spacing } from "@/lib/theme";
+import { colors, fontSize, fonts, radius, spacing } from "@/lib/theme";
+
+// Text in the app font. Use it instead of React Native's Text; for bold text use ui.bold
+// (fonts.bold), not fontWeight.
+export function Text({ style, ...props }: TextProps) {
+  return <RNText {...props} style={[styles.text, style]} />;
+}
 
 export function Screen({ children, edges }: { children: ReactNode; edges?: ("top" | "bottom")[] }) {
   return (
@@ -61,12 +69,15 @@ export function Card({ children }: { children: ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-// Red card for blocked payments and errors; blue-grey for neutral information.
-export function Notice({ title, text, tone = "danger" }: { title?: string; text: string; tone?: "danger" | "info" }) {
+// Red card for blocked payments and errors; amber for "allowed, but check" (M13); soft purple for
+// neutral information.
+export function Notice({ title, text, tone = "danger" }: { title?: string; text: string; tone?: "danger" | "warning" | "info" }) {
+  const box = tone === "danger" ? styles.noticeDanger : tone === "warning" ? styles.noticeWarning : styles.noticeInfo;
+  const color = tone === "danger" ? styles.dangerText : tone === "warning" ? styles.warningText : null;
   return (
-    <View style={[styles.notice, tone === "danger" ? styles.noticeDanger : styles.noticeInfo]}>
-      {title && <Text style={[styles.noticeTitle, tone === "danger" && styles.dangerText]}>{title}</Text>}
-      <Text style={[styles.noticeText, tone === "danger" && styles.dangerText]}>{text}</Text>
+    <View style={[styles.notice, box]}>
+      {title && <Text style={[styles.noticeTitle, color]}>{title}</Text>}
+      <Text style={[styles.noticeText, color]}>{text}</Text>
     </View>
   );
 }
@@ -75,7 +86,7 @@ export function Field({ label, ...input }: { label: string } & TextInputProps) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput placeholderTextColor={colors.muted} style={styles.input} {...input} />
+      <TextInput placeholderTextColor={colors.muted} style={ui.input} {...input} />
     </View>
   );
 }
@@ -87,43 +98,58 @@ export function SectionTitle({ children }: { children: ReactNode }) {
 export const ui = StyleSheet.create({
   muted: { fontSize: fontSize.label, color: colors.muted },
   body: { fontSize: fontSize.body, color: colors.text },
+  bold: { fontFamily: fonts.bold },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   gap: { gap: spacing.md },
-});
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  scroll: { padding: spacing.lg, gap: spacing.lg },
-  button: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md + 2,
-    paddingHorizontal: spacing.lg,
-    alignItems: "center",
-  },
-  primary: { backgroundColor: colors.primary },
-  secondary: { backgroundColor: colors.background, borderWidth: 2, borderColor: colors.primary },
-  dangerButton: { backgroundColor: colors.danger },
-  dim: { opacity: 0.5 },
-  buttonText: { fontSize: fontSize.button, fontWeight: "700" },
-  primaryText: { color: colors.primaryText },
-  secondaryText: { color: colors.primary },
-  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
-  notice: { borderRadius: radius.lg, padding: spacing.lg, gap: spacing.xs, borderWidth: 2 },
-  noticeDanger: { backgroundColor: "#FEF2F2", borderColor: colors.danger },
-  noticeInfo: { backgroundColor: colors.card, borderColor: colors.card },
-  noticeTitle: { fontSize: fontSize.button, fontWeight: "700", color: colors.text },
-  noticeText: { fontSize: fontSize.body, color: colors.text },
-  dangerText: { color: colors.danger },
-  field: { gap: spacing.xs },
-  label: { fontSize: fontSize.label, color: colors.muted },
   input: {
     borderWidth: 1,
-    borderColor: colors.muted,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
     fontSize: fontSize.body,
+    fontFamily: fonts.regular,
     color: colors.text,
   },
-  sectionTitle: { fontSize: fontSize.button, fontWeight: "700", color: colors.text },
+});
+
+const styles = StyleSheet.create({
+  text: { fontFamily: fonts.regular, color: colors.text },
+  safe: { flex: 1, backgroundColor: colors.background },
+  scroll: { padding: spacing.lg, gap: spacing.lg },
+  button: {
+    minHeight: 64,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primary: { backgroundColor: colors.primary },
+  secondary: { borderWidth: 2, borderColor: colors.text },
+  dangerButton: { backgroundColor: colors.danger },
+  dim: { opacity: 0.5 },
+  buttonText: { fontSize: fontSize.button, fontFamily: fonts.bold, textAlign: "center" },
+  primaryText: { color: colors.primaryText },
+  secondaryText: { color: colors.text },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  notice: { borderRadius: radius.lg, padding: spacing.lg, gap: spacing.xs, borderWidth: 2 },
+  noticeDanger: { backgroundColor: colors.dangerSoft, borderColor: colors.danger },
+  noticeInfo: { backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
+  noticeWarning: { backgroundColor: colors.warningSoft, borderColor: colors.warning },
+  noticeTitle: { fontSize: fontSize.button, fontFamily: fonts.bold },
+  noticeText: { fontSize: fontSize.body, lineHeight: 25 },
+  dangerText: { color: colors.danger },
+  warningText: { color: colors.warning },
+  field: { gap: spacing.xs },
+  label: { fontSize: fontSize.label, color: colors.muted },
+  sectionTitle: { fontSize: fontSize.button, fontFamily: fonts.bold },
 });

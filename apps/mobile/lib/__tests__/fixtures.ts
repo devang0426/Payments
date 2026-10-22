@@ -3,12 +3,20 @@ import type { HistoryEntry } from "../history";
 import type { Payee } from "../payees";
 import type { KeyValueStore } from "../storage";
 
+// Times in IST, built from UTC (IST = UTC+05:30).
+export const ist = (isoLocal: string): number => Date.parse(`${isoLocal}+05:30`);
+
+// Saved long before any test's "now", so the 24 h new-payee limit never applies by accident.
+export const LONG_AGO = ist("2026-01-01T00:00:00");
+const old = { addedAt: LONG_AGO, vpaChangedAt: LONG_AGO };
+
 export const MUMMY: Payee = {
   id: "p-mummy",
   displayName: "Mummy",
   vpa: "mummy.fake@upi",
   phone: "+919000000001",
   aliases: ["mumma", "maa", "mom"],
+  ...old,
 };
 
 export const PAPA: Payee = {
@@ -17,6 +25,7 @@ export const PAPA: Payee = {
   vpa: "papa.fake@upi",
   phone: "+919000000002",
   aliases: ["dad"],
+  ...old,
 };
 
 export const RAHUL_SHARMA: Payee = {
@@ -25,6 +34,7 @@ export const RAHUL_SHARMA: Payee = {
   vpa: "rahul.sharma.fake@upi",
   phone: "+919000000003",
   aliases: ["rahul bhaiya"],
+  ...old,
 };
 
 export const RAHUL_VERMA: Payee = {
@@ -32,6 +42,7 @@ export const RAHUL_VERMA: Payee = {
   displayName: "Rahul Verma",
   vpa: "rahul.verma.fake@upi",
   aliases: [],
+  ...old,
 };
 
 export const PRIYA: Payee = {
@@ -39,12 +50,10 @@ export const PRIYA: Payee = {
   displayName: "Priya",
   vpa: "priya.fake@upi",
   aliases: ["priya didi"],
+  ...old,
 };
 
 export const PAYEES: Payee[] = [MUMMY, PAPA, RAHUL_SHARMA, RAHUL_VERMA, PRIYA];
-
-// Times in IST, built from UTC (IST = UTC+05:30).
-export const ist = (isoLocal: string): number => Date.parse(`${isoLocal}+05:30`);
 
 export function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
   return {

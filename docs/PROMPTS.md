@@ -400,3 +400,250 @@ Make sure the PhonePe launch works in the release build too (add Android package
 ```
 - [ ] APK installed, full flow works on mobile data with Wi-Fi off
 - [ ] Every item in `docs/TEST-CHECKLIST.md` ticked
+
+---
+
+# After M8: reliability, safety, agent (agreed 2026-10-16)
+
+Order: **payment test → M9 → M10 → M12 → M11 → M13 → M14 → M15**. M12 comes before M11 on
+purpose: the conversation is the demo's centre, and M11's Hindi work then feeds its evals.
+The agent design and the new voice-confirmation rule are in `docs/AGENT.md`.
+
+## Payment test (you, before M9)
+
+Not a Claude prompt. Run the matrix in `docs/DEPLOY.md` step 3 (₹1 / ₹101 / ₹500, `tr` on/off, back on
+the PIN screen) and send Claude the results (no UPI IDs). Then do the "Decision step" above with
+Claude. If ₹101/₹500 are rejected, the fallback is chosen **before** M9.
+
+---
+
+## M9 — Demo-day reliability
+
+```
+Do M9: demo-day reliability. The payment flow itself does not change.
+
+1. Settings → "Ready check" (all builds). Runs in order and shows ✅/❌ with a one-line fix each:
+   server /health; a /parse round trip with "Mummy ko paanch sau bhejo" → 50000 paise; in-app mic
+   available + permission; contacts permission; an en-IN TTS voice installed
+   (expo-speech getAvailableVoicesAsync); upi:// resolvable (Linking.canOpenURL); at least one
+   payee; history readable; today's remaining limit; rehearsal mode OFF.
+   Keep the result model in a pure function with tests. Never log the text.
+2. Server: send OpenRouter a `models` list: OPENROUTER_MODEL, then OPENROUTER_FALLBACK_MODEL if
+   set (check the current OpenRouter model-fallbacks docs). Non-reasoning models only. Vitest with
+   mocked fetch.
+3. Phone: parseText retries once, only on network error/timeout (never on NO_NAME/NO_AMOUNT/
+   AI_FAILED), total ≤ 15 s. A final failure is still "Couldn't understand that".
+4. Rehearsal mode: Settings switch, off by default, persisted in AsyncStorage. When on: a fake
+   launcher, a full-width "REHEARSAL — no money moves" banner on Home, Confirm and Receipt, and txnRefs
+   prefixed "RH" (they count toward the daily limit, the safe side). A "Clear rehearsal payments"
+   button uses removeByTxnRefPrefix. Never the real launcher while it's on.
+5. Remember the mic language (EN/हिं) across restarts.
+6. Fix doc drift: CLAUDE.md/ARCHITECTURE "opens PhonePe directly" (it's an implicit intent: default
+   UPI app or a chooser); the stale upi.ts header comment; ARCHITECTURE "keyboard mic first";
+   PROGRESS known issue about the chooser decision (M5 made it).
+7. Update PROGRESS.md, TEST-CHECKLIST.md (run Ready check first) and DEPLOY.md.
+```
+
+**Done**
+- [ ] Ready check all ✅ on the dev build; stopping the laptop server → server rows ❌ with a fix line
+- [ ] Rehearsal on: full flow ends in a receipt, PhonePe never opens, banner on every screen; Ready check shows ❌
+- [ ] "Clear rehearsal payments" brings "sent today" back down
+- [ ] A bad primary model ID in `.env` + a valid fallback → smoke 8/8
+- [ ] Mic language survives an app restart
+
+---
+
+## M10 — Protect payees
+
+```
+Do M10: protect payees. payees.ts, rules.ts and pay.ts are money/safety files: tests first, show me.
+
+1. expo-local-authentication (check the SDK 57 docs; it's in Expo Go). Device auth (fingerprint or
+   phone PIN/pattern) before saving, editing or deleting a payee. If the phone has no screen lock,
+   ask me before choosing between blocking payee changes and warning only.
+2. Payee schema v2: add addedAt and vpaChangedAt (ms). Migrate existing payees by setting both to
+   the migration time (safe side: one 24 h cooldown after the update). Corrupt entries are still
+   skipped, never a crash.
+3. rules.ts: NEW_PAYEE_LIMIT_PAISE = 50000. For 24 h after addedAt or vpaChangedAt, the per-payment
+   cap is ₹500 → new reason NEW_PAYEE_LIMIT with the hours left. The Confirm card shows "New payee"
+   or "UPI ID changed today" even when the payment is allowed.
+4. pay.ts: sendPayment reloads the payee + history and re-runs checkPayment right before writing
+   the pending entry. A failure means no pending entry and no launch; the Confirm card shows the red card.
+5. One write queue per store (history, payees, confirm lock). Tests: concurrent add + updateStatus
+   lose nothing.
+6. Update CLAUDE.md rule 6, the ARCHITECTURE failure table, PROGRESS and TEST-CHECKLIST.
+```
+
+**Done**
+- [ ] Editing a payee asks for fingerprint/PIN; cancelling it changes nothing
+- [ ] New payee: ₹500 → Confirm with a "New payee" badge; ₹501 → red card with the hours left
+- [ ] Changing an existing payee's UPI ID → the cooldown applies again
+- [ ] After the update, existing payees work (with a one-time cooldown) and nothing crashes
+- [ ] Payee deleted while the Confirm card is open → Yes → red card, PhonePe doesn't open
+
+---
+
+## M12 — Conversation + voice confirmation (smallest agentic demo)
+
+```
+Do M12: multi-turn conversation with one LLM call per turn (router design), and spoken-yes
+confirmation. Read docs/AGENT.md first; it is the spec. Keep /parse working.
+
+STOP after step 1 and show me the tests before writing any implementation.
+
+1. Tests first:
+   - lib/voiceConfirm.ts (pure): normalization (incl. the trailing-"na" softener), the strict-yes,
+     cancel and pause lists, yes-words, negations ("na" only alone or before a verb), echo, the 5 s
+     window, and the decision for a heard transcript given the current card (txnRef, payeeId, paise,
+     green/amber/red, offer, amber step, re-ask count) and an optional /turn result.
+     All 45 cases in docs/AGENT.md "Voice confirmation tests", incl. "Haan, 300 kar do" on a ₹300
+     card (confirm) and on a ₹500 card (new card), "300 kar do" on a ₹300 card (re-ask),
+     "haan bhejo na" (confirm) vs "haan na bhejo" (not clear), and "ruko" (pause).
+   - lib/conversation.ts (pure): draft {payeeId?, amount?}, awaiting, next question (template id),
+     reducer per action.
+   - Server /turn: spans must be in a user turn (set_amount: the latest one); relative amounts
+     (kam, zyada, aur, double, half, minus, plus, कम, ज़्यादा) → ASK_EXACT; "LAST" handling.
+2. Server POST /turn: { turns: [{role: "user"|"assistant", text}] (≤6 user turns, ≤8 KB),
+   awaiting?: "amount"|"payee"|"draft", card?: true }. Assistant turns are the phone's own templates.
+   The LLM returns ONE action as JSON: pay{nameText?, amountText?|"LAST"}, set_amount{amountText|"LAST"},
+   set_payee{nameText}, cancel, unknown. Amount via parseAmount → paise, response like /parse.
+   Same logging rules, rate limit and 10 s timeout as /parse.
+3. Home becomes a chat transcript (user bubbles + FlowPay bubbles, text from strings.ts). FlowPay's
+   questions are spoken; in a dev build the mic reopens once after each question finishes. Typing
+   always works.
+4. Confirm: implement the new rule 8 exactly as docs/AGENT.md "Voice confirmation" (mic after TTS
+   onDone + 250 ms, 5 s window, a mic button on the card, the strict-yes / cancel / pause lists,
+   yes + change compared in code, re-ask (then "Please tap Yes to send"), cancel ("Cancelled", card
+   closes), pause ("Okay, tap the mic when you're ready."), echo, red, amber, txnRef).
+   It replaces lib/voiceYes.ts.
+   Tap Yes stays, behind the same lock. A replaced card shows "already replaced", no Yes.
+5. "Why this card" line on Confirm, built by the phone (e.g. "Maa → Mummy · same as 3 Oct").
+6. apps/server/scripts/eval.ts + evals/turns.json: 30+ conversations incl. the 10 examples in
+   docs/AGENT.md, partial yes, late yes (heardAtMs), TTS echo (spokenText), and the three
+   "Haan, 300 kar do" / "300 kar do" cases. Prints the pass rate; not part of npm test.
+7. Update CLAUDE.md rules 1 and 8 (wording in docs/AGENT.md "Rule changes"), ARCHITECTURE, PROGRESS
+   and TEST-CHECKLIST (replace the "Voice Yes (strict)" section).
+```
+
+**Done**
+- [ ] Voice: "Mummy ko bhejo" → spoken "How much?" → "pichhli baar jitna" → card ₹500 → "nahi, teen sau kar do" → new card ₹300 → **say "haan"** → PhonePe opens
+- [ ] "Haan, 300 kar do" on a ₹300 card → PhonePe opens; on a ₹500 card → new ₹300 card that asks again
+- [ ] "300 kar do" on a ₹300 card → "It's already ₹300. Say yes to send." and the mic reopens; the third time → "Please tap Yes to send", mic stays closed
+- [ ] "haan bhejo na" → PhonePe opens; "haanji" → PhonePe opens
+- [ ] Say "nahi" or "rehne do" on a card → "Cancelled", the card closes, nothing is paid
+- [ ] Say "ruko" → "Okay, tap the mic when you're ready.", card stays open → tap the mic → "haan" → PhonePe opens
+- [ ] Partial yes ("haan… ruko") → "not clear", nothing happens; tap Yes still works
+- [ ] Late yes: stay silent for 6 s, then say "haan" → nothing
+- [ ] Echo: speaker at full volume, say nothing → the card never confirms itself
+- [ ] Back to the replaced ₹500 card → "already replaced", no confirm by voice or tap
+- [ ] Red card (₹3,001) → saying "haan" does nothing
+- [ ] "Mummy ko pichhli baar se 100 kam bhejo" → asks for the exact amount
+- [ ] Server down mid-conversation → "Couldn't understand", draft kept; retry works
+- [ ] Eval ≥ 95% overall, 100% on refuse/ask and voice-guard cases; Vercel logs show no text
+
+---
+
+## M11 — Hindi end to end
+
+```
+Do M11: Hindi works end to end with the हिं mic. amount.ts and match.ts: tests first, show me.
+
+1. Server amount.ts: Devanagari number words (एक…निन्यानवे, सौ, हज़ार/हजार, लाख, डेढ़, ढाई, सवा,
+   साढ़े, पौने) and रुपये/रुपया/रुपए. Normalize nukta and chandrabindu/anusvara variants
+   (पाँच/पांच, हज़ार/हजार). Same strictness as Latin words; a trailing "दो" is the verb, like "do".
+   The "पांच सौ"/"दो हज़ार" fail tests become pass tests (with my okay).
+2. Phone match.ts: a Devanagari name can match a Latin payee and vice versa, through a small
+   rule-based transliteration + loose comparison (aa/a, ee/i, oo/u, v/w, trailing a). A cross-script
+   match counts only when exactly one payee matches; otherwise "Which X?". More relationship words:
+   bhaiya/भैया, didi/दीदी, nani/नानी, dadi/दादी, chacha/चाचा, bhabhi/भाभी (keep the honorific rules).
+3. When the mic is हिं, speak questions, the confirm question, re-asks and red-card reasons in Hindi
+   (hi-IN TTS, a `speechHi` section in strings.ts). Screen text stays English; update the CLAUDE.md
+   convention for speech. No hi-IN voice installed → English.
+4. Voice confirmation listens in the same language as the question (same lists and guards).
+5. Smoke + eval: add पाँच सौ, दो हज़ार पाँच सौ, ढाई सौ, "राहुल को ५०० भेजो", "हाँ, ३०० कर दो".
+```
+
+**Done**
+- [ ] हिं mic: "मम्मी को पाँच सौ भेजो" → ₹500 card, question spoken in Hindi → say "हाँ" → PhonePe
+- [ ] "राहुल को दो सौ भेजो" with the payee saved as "Rahul" → correct card
+- [ ] "नहीं" or "रुको" on the card → nothing happens
+- [ ] The TEST-CHECKLIST Hindi item passes; smoke and eval green against Vercel
+
+---
+
+## M13 — On-phone abilities
+
+```
+Do M13: new actions for the M12 router. All private data is shown by the phone; the LLM gets nothing back.
+Tests first (dates, rules, pre-filter, amber confirmation); show me.
+
+1. Phone pre-filter before any send: a UPI ID pattern or a 10-digit Indian mobile in the text →
+   don't send; answer locally ("I can only pay saved payees…"). Pasted UPI ID → check_upi_id screen
+   (saved? added when? format/handle; never a safety verdict).
+2. show_spending{nameText?, periodText}: server parses the period with code (aaj, kal, is hafte,
+   is mahine, pichhle mahine + Devanagari) → fixed values; the phone computes and shows total + count.
+3. Reminders: expo-notifications (check SDK 57 docs and Expo Go support first; explain the package).
+   create_reminder{nameText, amountText?, whenText}: server parses the date with code (IST, "1 tareekh",
+   "har mahine 1 ko"); phone reminder card → "haan" or tap Save; stored structured. The notification
+   opens a normal Confirm card that speaks and listens (rule 8). Never pays on its own.
+4. Unusual-payment warning in rules.ts (first payment to this payee, > 3× their median, 23:00–05:00
+   IST) → amber card: the warning is spoken after the question, and confirming needs a second spoken
+   yes (docs/AGENT.md) or the tap "Yes, I'm sure". Code, not AI.
+5. Red-card offer: over the daily limit, the phone offers "Send ₹X instead?" (X = remaining, computed
+   by the phone); "haan" or a tap opens a new card for X that asks again.
+6. Eval set +15 conversations (incl. examples 2, 4, 6, 7).
+```
+
+**Done**
+- [ ] "Papa ko is mahine kitna bheja?" → correct total (check against "See all payments")
+- [ ] Reminder for 2 minutes from now (DEV shortcut) → notification → Confirm card speaks → say "haan" → PhonePe
+- [ ] Pasting a UPI ID into the box → nothing reaches the server (no `/turn` hit in Vercel logs)
+- [ ] First payment to a payee → amber card: "haan" → "Are you sure? Say yes again." → "haan" → PhonePe
+- [ ] Over the daily limit → "Send ₹X instead?" → "haan" → new card → "haan" → PhonePe
+
+---
+
+## M14 — Tool-calling agent
+
+```
+Do M14: replace the router with a stateless tool-calling agent (docs/AGENT.md). Check the current
+OpenRouter tool-calling docs first. The phone keeps the conversation; the server holds the prompt,
+tool schemas and limits. Voice confirmation does not change (code, never a tool).
+
+1. Server POST /agent: phone sends messages incl. tool results; the server accepts only the
+   docs/AGENT.md tool result shapes (fixed values, counts, refs, {shown:true}) and rejects anything
+   else with BAD_INPUT. One LLM call per request with tools + parallel_tool_calls. Server checks every
+   tool call: known tool, valid args, spans in user turns; attaches paise/dates parsed by code. Free
+   text with digits/₹/rupee is dropped and replaced by a template.
+2. Limits: ≤4 steps and ≤6 tool calls per user turn (counted from the messages), 10 s per call,
+   20 s per turn on the phone, max_tokens 200. Terminal tools end the turn with no extra LLM call.
+3. Phone lib/agent.ts: the loop, the tool runners (pure where possible), a DEV step-record panel.
+4. Eval: run the eval set on gpt-4.1-nano, gpt-4.1-mini, qwen3-235b-a22b-2507 and
+   mistral-small-3.2; record pass rate + p50/p95 latency in PROGRESS; pick the model.
+5. Hostile mock tests: invented spans, unknown tools, 10 calls in a row, numbers in free text.
+```
+
+**Done**
+- [ ] All 10 example conversations in docs/AGENT.md pass on the phone, confirming by voice
+- [ ] Normal "X ko N bhejo" still takes 1 LLM step (DEV panel)
+- [ ] A mocked hijacked model can't produce a card for an unsaved payee or paise not from code
+- [ ] Eval ≥ 95% on the chosen model; cost per 100 requests noted in PROGRESS
+
+---
+
+## M15 — Memory and explanations
+
+```
+Do M15: preferences and explanations, phone only.
+1. Preferences store (AsyncStorage + Zod): reply language, speak replies on/off, mic language.
+   set_preference with fixed values only.
+2. suggest_alias: "Maa matlab Mummy" → card "Add 'maa' as a name for Mummy?" → fingerprint/PIN
+   (M10) → save. Voice alone never saves an alias.
+3. explain_last: "Kyun block hua?" → the phone renders the last turn's step record (rule hit,
+   amounts from code, matched alias). Transcripts are dropped after 10 min idle, never stored.
+```
+
+**Done**
+- [ ] Preferences survive restart; "Hindi mein bolo" switches replies
+- [ ] Adding an alias needs fingerprint/PIN; cancelling changes nothing
+- [ ] "Kyun block hua?" explains the daily limit with the phone's numbers
