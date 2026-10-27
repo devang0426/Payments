@@ -48,6 +48,8 @@ export type SpeechTexts = {
   tell: (message: MessageId, name?: string) => string;
   recent: (count: number) => string;
   amountFor: (name: string) => string; // polish: "How much should I send to Papa?"
+  notClearAsk: string; // 2026-10-22: Confirm card, once, then the mic opens again
+  fullAmountAsk: string;
   // M15
   explain: ExplainTexts;
   prefChanged: (key: string, value: string) => string;
@@ -113,6 +115,8 @@ const EN: SpeechTexts = {
         : strings.agent.tell[message],
   recent: strings.agent.recentSpoken,
   amountFor: strings.home.amountFor,
+  notClearAsk: strings.voice.notClearAsk,
+  fullAmountAsk: strings.voice.fullAmountAsk,
   // Spoken English = the screen text without quote marks (amounts arrive as "500 rupees").
   explain: { ...strings.explain, saidAs: (spoken, name) => `You said ${spoken}, which is saved as ${name}.` },
   prefChanged: (key, value) => strings.prefs.changed[`${key}:${value}`] ?? "Okay.",
@@ -181,6 +185,8 @@ const HI: SpeechTexts = {
     })[message],
   recent: (count) => (count === 0 ? "अभी कोई पेमेंट नहीं है।" : `ये आपके पिछले ${count} पेमेंट हैं।`),
   amountFor: (name) => `${name} को कितने भेजने हैं?`,
+  notClearAsk: "माफ़ कीजिए, समझ नहीं आया। भेजने के लिए हाँ बोलिए, रोकने के लिए नहीं बोलिए।",
+  fullAmountAsk: "पूरी रकम बोलिए, जैसे तीन सौ कर दो। मैं सुन रहा हूँ।",
   explain: {
     nothing: "हाल में कुछ नहीं रुका।",
     perPayment: (amount, name, max) => `${name} को ${amount} रोक दिए गए: एक बार में ज़्यादा से ज़्यादा ${max} भेज सकते हैं।`,

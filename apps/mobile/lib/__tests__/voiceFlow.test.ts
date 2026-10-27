@@ -1,6 +1,6 @@
 import { MESSAGE_IDS } from "../agent";
 import { speechTexts } from "../speech";
-import { CANCEL_PHRASES, normalizeUtterance } from "../voiceConfirm";
+import { CANCEL_PHRASES, LISTEN_WINDOW_MS, STRICT_YES, normalizeUtterance } from "../voiceConfirm";
 import { HOME_LISTEN_MS, MAX_NUDGES, afterMiss, greetingQuestion, receiptSpeech } from "../voiceFlow";
 
 const EN = speechTexts("en-IN");
@@ -18,8 +18,8 @@ describe("Home greeting (M16)", () => {
     expect(greetingQuestion({ awaiting: "amount" })).toBe("amount");
   });
 
-  it("Home listens longer than the Confirm card's 5 s", () => {
-    expect(HOME_LISTEN_MS).toBeGreaterThan(5000);
+  it("Home listens longer than the Confirm card", () => {
+    expect(HOME_LISTEN_MS).toBeGreaterThan(LISTEN_WINDOW_MS);
   });
 });
 
@@ -66,9 +66,9 @@ describe("receipt speech (M16)", () => {
 
   // The mic reopens after the nudge and the failure line, so they must not end with an answer word.
   it("no M16 line ends with a yes-word or a cancel word", () => {
-    const answerWords = new Set(["yes", "haan", "ok", "हाँ", ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
+    const answerWords = new Set([...STRICT_YES.filter((p) => !p.includes(" ")), ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
     for (const t of [EN, HI]) {
-      const agentLines = [...MESSAGE_IDS.map((m) => t.tell(m, "Mummy")), t.recent(0), t.recent(1), t.recent(3), t.amountFor("Mummy")]; // M14 + polish
+      const agentLines = [...MESSAGE_IDS.map((m) => t.tell(m, "Mummy")), t.recent(0), t.recent(1), t.recent(3), t.amountFor("Mummy"), t.notClearAsk, t.fullAmountAsk]; // M14 + polish + 2026-10-22
       for (const line of [t.nudge, t.failed, t.paid(t.rupees(60000), "Mummy"), t.notPaid, t.noUpiApp, t.didItGo, t.rehearsalNote, t.dontKnow("Mummy"), t.noUpiFor("Mummy"), ...agentLines]) {
         expect(answerWords.has(normalizeUtterance(line).split(" ").at(-1)!)).toBe(false);
       }

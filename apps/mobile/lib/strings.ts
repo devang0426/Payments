@@ -30,6 +30,7 @@ export const strings = {
     typeInstead: "Type instead",
     hideTyping: "Hide typing",
     payments: "Payments",
+    addByQr: "📷 Add payee (QR)",
     langEnglish: "EN",
     langHindi: "हिं",
     micDenied: "FlowPay can't use the microphone. You can still type, or use the mic on your keyboard.",
@@ -65,6 +66,7 @@ export const strings = {
     blockedTitle: "Can't send this payment",
     alreadyConfirmed: "This payment was already confirmed.",
     payeeMissing: "This payee no longer exists.",
+    loadFailed: "Couldn't read your saved payees or payments. Nothing was sent. Please go back and try again.",
     sendFailed: "Something went wrong. The payment was not sent.",
     noUpiApp: "No UPI app could be opened, so nothing was paid. Is PhonePe installed?",
     newPayee: (hours: number) => `New payee: up to ₹500 per payment for the next ${hours} ${hours === 1 ? "hour" : "hours"}.`,
@@ -130,6 +132,9 @@ export const strings = {
     blocked: "I can only pay saved payees. Add new ones in Settings.",
     spending: (amount: string, count: number) =>
       count === 0 ? "No payments found." : `${amount} in ${count} ${count === 1 ? "payment" : "payments"}.`,
+    // 2026-10-22: the Confirm card asks once more aloud when an answer wasn't clear (then the mic opens).
+    notClearAsk: "Sorry, I didn't catch that. Say haan to send it, or nahi to stop it.",
+    fullAmountAsk: "Please say the full amount, like teen sau kar do. I'm listening.",
     // M16, spoken: Home's nudge after silence, and the result after PhonePe.
     nudge: "I'm listening. Who do you want to pay, and how much?",
     paid: (amount: string, name: string) => `Done. ${amount} sent to ${name}.`,

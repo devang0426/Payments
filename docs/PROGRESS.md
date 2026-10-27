@@ -30,6 +30,8 @@ Claude Code updates this file after every milestone. Read it first in every new 
 | M14 Tool-calling agent | 🟡 | Built 2026-10-19: POST /agent, several payments per message (queue), server 457 + mobile 828 tests green; live /agent eval 84/86 (GATE PASS), /turn 70/70, smoke 10/10; model stays gpt-4.1-nano. Phone check pending; Vercel needs a redeploy | Stateless agent, eval-based model choice |
 | M15 Memory + explanations | 🟡 | Built 2026-10-19: preferences, nicknames (fingerprint/PIN), "Kyun block hua?"; server 479 + mobile 872 tests green; live /agent eval 91/92 (GATE PASS). Phone check pending |
 | Polish (rough edges) | 🟡 | Built 2026-10-19: see the log entry. Phone check pending (docs/CHECKLIST.md) |
+| One spoken yes | 🟡 | Built 2026-10-22 (user's choice): recognizer spellings of yes, "not clear" asks once more aloud, 8 s window, first payment = one yes; mobile 930 tests green. Phone check pending (CHECKLIST 2.6a–d) |
+| Stabilise (QA review) | 🟡 | Built 2026-10-22: LLM timeout 6 s, Confirm/Home never hang on a storage error, stalled launch → unknown, spoken phone numbers blocked, WRITE_CONTACTS cleanup; server 480 + mobile 947 tests green. Phone check pending ("Don't keep activities" test) |
 | Add payee by QR scan | 🟡 | Built 2026-10-22: `parseUpiQr` (tests first, approved), `expo-camera`, scan screen; mobile 893 tests green. New development build with the camera made 2026-10-22 (EAS build `65676cae`); install it, then phone check (CHECKLIST §13) |
 
 ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused · 🔴 blocked
@@ -181,6 +183,57 @@ amount prefilled. The earlier "activity not found" launch error did not come bac
 - Next step:
 -->
 
+### 2026-10-22 — Stabilise (QA review findings 4, 7, 8, 10, 12; phone check pending)
+- Why: the QA review (claude.ai doc "FlowPay — QA Review & Make-It-Real Plan") found edge cases that
+  could hang a screen, waste LLM calls, or let a spoken phone number reach the server.
+- Built:
+  - **Server LLM timeout 10 s → 6 s** (`LLM_TIMEOUT_MS`, `src/llm.ts`): the phone gives up after 7 s per
+    attempt and retries only when no answer came, so a 7–10 s LLM answer used to be thrown away and paid
+    for twice. Now the server answers "failed" first (rule 9 unchanged). docs/AGENT.md limits updated.
+  - **Confirm card can't hang on "loading"**: a storage error while reading payees / history / the lock
+    → new `loadFailed` state ("Couldn't read your saved payees or payments. Nothing was sent…").
+    Home's app-start recovery check (`listPending`) catches too and greets anyway.
+  - **A launch that never returns** (`lib/pay.ts` + new `lib/launchStall.ts`): if FlowPay comes back
+    to the screen and no UPI result arrives within 15 s (Android recreated FlowPay while PhonePe was
+    open), the payment becomes `unknown` (counts toward the limit; the receipt asks "Did it go
+    through?") instead of "Sending" forever. A result that still arrives later is saved; a late launch
+    error is not (PhonePe was open, so it proves nothing).
+  - **Spoken phone numbers** (`lib/prefilter.ts`): 10+ digits in a row with at least one digit word
+    (Latin, Hinglish, Devanagari; "double"/"triple") → `phone`, never sent (rule 3). "no" is not a digit
+    word (cancel word); "do" is (only a run of 10 counts).
+  - `app.json`: `WRITE_CONTACTS` removed from `permissions` (it was also in `blockedPermissions`).
+  - Not code: `OPENROUTER_FALLBACK_MODEL` is still to be set by the user (DEPLOY.md step 1), then
+    `npm run eval` against it once.
+- How it was tested: server 480 Vitest (+1), mobile 947 Jest (+5 stall, +12 spoken-number), typecheck
+  clean in both, Android bundle OK. Built on top of the uncommitted "One spoken yes" changes.
+- Next step: phone check: Developer options → "Don't keep activities" on, pay ₹1, come back from
+  PhonePe → within ~15 s the receipt asks "Did it go through?" (then switch the option off). Then
+  plan step 2 (voice on "Which Mummy?" and "Did it go through?").
+
+### 2026-10-22 — One spoken yes is enough (phone check pending)
+- Why: on the phone the user had to say yes "again and again" before a payment went through. Causes:
+  the recognizer's spellings ("han", "okay", "theek hai") weren't on the strict list → "not clear" with
+  the mic closed; every first payment to a payee was amber (second yes); a 5 s window.
+- Built (the user picked all four options; rule 8 text in CLAUDE.md and docs/AGENT.md "Voice
+  confirmation changes, 2026-10-22" updated):
+  - `lib/voiceConfirm.ts`: STRICT_YES + 37 phrases (recognizer spellings and plain yeses, Latin and
+    Devanagari), more yes-words for "yes + change"; `LISTEN_WINDOW_MS` 5000 → 8000; `MAX_NOT_CLEAR_ASKS`
+    = 1. Still: the whole utterance, no no-word in any phrase (tested), negations veto, echo / late /
+    stale ignored, never on red. The reminder card and the helper offer use the same list and window.
+  - `app/confirm.tsx`: "not clear" → says "Sorry, I didn't catch that. Say haan to send it, or nahi to
+    stop it." (Hindi too) and opens the mic once more per card; then hint + tap only.
+  - `lib/rules.ts cardTone` (money/safety file: tests shown to and approved by the user first): amber
+    only for UNUSUAL_AMOUNT or LATE_NIGHT; FIRST_PAYMENT alone → green, still spoken and shown as a note
+    on the card; the ₹500 / 24 h new-payee limit is unchanged.
+  - Tests that pinned the old list/window updated on purpose (#6, #28/#29, "ok"/"haan haan"/"yes yes" now
+    confirm, the answer-word checks now use the whole yes list); eval v11 → 8.3 s, v15 → "haan ok",
+    new v15b–d.
+- How it was tested: mobile 930 Jest (+37), typecheck clean, Android bundle OK. Live (gpt-4.1-nano,
+  port 3999): /agent 94/95 (99%, GATE PASS; voice 15/15, voiceGuard 17/17, refuseAsk + prefilter 100%),
+  /turn 73/73, smoke 10/10, server log clean. The miss: "500 bhejo" came back as set_amount instead of
+  pay; the phone then asks "Who do you want to pay?", the same as for pay (harmless).
+- Next step: phone check (CHECKLIST 2.6a–d). JS only: no rebuild.
+
 ### 2026-10-22 — Add a payee by scanning their UPI QR (phone check pending)
 - Why: typing UPI IDs by hand is the most error-prone part of setting up her payees (doodhwala, kamwali…).
 - Built:
@@ -199,6 +252,9 @@ amount prefilled. The earlier "activity not found" launch error did not come bac
     that a new UPI ID restarts the ₹500 / 24 h limit. Saving still needs the fingerprint/PIN; a QR never pays
     (rule 6 unchanged: only saved payees can be paid).
   - Privacy: nothing the camera sees is stored, logged or sent; the QR never reaches the server or the AI.
+  - Same day, on request: **Home → "📷 Add payee (QR)"** (a small link in Home's bottom row, so the
+    big-mic screen stays simple for her) → scanner → the Add payee form opens already filled
+    (`scan-qr?then=add` → `router.replace("/payee-edit")`) → Save with fingerprint/PIN → back to Home.
 - How it was tested: mobile 893 Jest (+21 QR tests), typecheck clean, Android bundle OK.
 - Known: `npx expo install --check` reports `expo` 57.0.29 → 57.0.31 and `expo-router` 57.0.27 → 57.0.29
   (patch releases since setup; not from this change). Optional: `npx expo install --fix` in its own step.

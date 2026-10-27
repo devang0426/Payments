@@ -39,10 +39,12 @@ the voice-confirmation spec).
 8. **Confirmation is mandatory:** the intent is never launched without the confirm card plus the
    user's **yes**: a tap on "Yes", or (development/release builds) a spoken yes decided by code in
    `lib/voiceConfirm.ts`, exactly as in `docs/AGENT.md` "Voice confirmation". The mic opens only after
-   the question has been spoken, for 5 s. A strict yes phrase confirms; a yes + change confirms only if
+   the question has been spoken, for 8 s (5 s until 2026-10-22). A strict yes phrase confirms (the list
+   includes the recognizer's spellings: han, haa, okay, theek hai…); a yes + change confirms only if
    code finds the same payee and paise as the card; a different change makes a new card with a new
    txnRef (the old one can never be confirmed); cancel phrases cancel, pause phrases pause; late, stale
-   or echoed speech is ignored; anything else is "not clear". Never on a red card. Voice and tap call
+   or echoed speech is ignored; anything else is "not clear" (asked once more aloud, then the tap
+   button). Never on a red card. Amber (second yes): an unusually large amount or late night only. Voice and tap call
    the same yes(), behind the persisted confirm lock (keyed by txnRef), so a double tap, voice + tap,
    re-render or re-mount can never launch the intent twice.
 9. If the server or internet fails, the payment never proceeds. Show "Couldn't understand that,

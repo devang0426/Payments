@@ -1,7 +1,8 @@
-// Scan a payee's UPI QR (Settings → Add payee → Scan). The QR only fills the form (lib/upi
-// parseUpiQr: the UPI ID + a suggested name; any amount in it is ignored); saving still needs the
-// fingerprint/PIN and the 24 h new-payee limit applies. Nothing the camera sees is stored or sent.
-import { router } from "expo-router";
+// Scan a payee's UPI QR (Settings → Add payee → Scan, or Home → "Add payee (QR)"). The QR only fills
+// the form (lib/upi parseUpiQr: the UPI ID + a suggested name; any amount in it is ignored); saving
+// still needs the fingerprint/PIN and the 24 h new-payee limit applies. Nothing the camera sees is
+// stored or sent. then=add (from Home): open the Add payee form next instead of going back to it.
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Linking, StyleSheet, View } from "react-native";
 
@@ -15,6 +16,7 @@ import { parseUpiQr } from "@/lib/upi";
 const s = strings.scanQr;
 
 export default function ScanQrScreen() {
+  const { then } = useLocalSearchParams<{ then?: string }>();
   const cam = cameraModule();
   const [permission, setPermission] = useState<"asking" | "granted" | "denied">("asking");
   const [problem, setProblem] = useState<string | null>(null);
@@ -34,7 +36,8 @@ export default function ScanQrScreen() {
     if (!result.ok) return setProblem(s.reasons[result.reason]);
     done.current = true;
     qrHandoff.set(result);
-    router.back();
+    if (then === "add") router.replace("/payee-edit"); // the form takes the scan when it opens
+    else router.back();
   }
 
   if (!cam) {

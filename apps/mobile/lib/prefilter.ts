@@ -16,10 +16,47 @@ const PHONE = /(^|\D)(?:\+?91[\s-]?|0)?[6-9](?:[\s-]?\d){9}(?!\d)/;
 
 const latinDigits = (text: string) => text.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x0966));
 
+// Digit words in Hinglish, English and Devanagari. "no" is left out (it's a cancel word); "do" is in
+// (it's also "give"), which is fine because only a run of 10 counts.
+const DIGIT_WORDS = new Set([
+  "zero", "shunya", "shoonya", "sunya", "one", "ek", "two", "do", "three", "teen", "four", "char", "chaar",
+  "five", "paanch", "panch", "six", "chhe", "chhah", "che", "seven", "saat", "sat", "eight", "aath", "ath",
+  "nine", "nau",
+  "शून्य", "जीरो", "ज़ीरो", "एक", "दो", "तीन", "चार", "पांच", "पाँच", "छह", "छः", "छे", "सात", "आठ", "नौ",
+]);
+const REPEAT_WORDS: Record<string, number> = { double: 2, triple: 3, "डबल": 2, "ट्रिपल": 3 };
+const SPOKEN_PHONE_DIGITS = 10;
+
+// A phone number read out as words ("nau aath saat…", "98765 four three…"): 10 or more digits in a
+// row, at least one of them spoken as a word. Runs of plain digits are left to PHONE.
+function hasSpokenNumber(text: string): boolean {
+  let run = 0;
+  let hasWord = false;
+  let repeat = 1;
+  for (const token of latinDigits(text).toLowerCase().split(/[\s,.;:!?।\-–—]+/)) {
+    if (!token) continue;
+    if (REPEAT_WORDS[token]) {
+      repeat = REPEAT_WORDS[token]!;
+      continue;
+    }
+    const digits = /^\d+$/.test(token) ? token.length : DIGIT_WORDS.has(token) ? repeat : 0;
+    if (digits === 0) {
+      run = 0;
+      hasWord = false;
+    } else {
+      run += digits;
+      hasWord ||= !/^\d+$/.test(token);
+      if (hasWord && run >= SPOKEN_PHONE_DIGITS) return true;
+    }
+    repeat = 1;
+  }
+  return false;
+}
+
 export function screenText(text: string): Screened {
   const at = AT_TOKEN.exec(text);
   if (at) return { kind: "upiId", vpa: at[0].toLowerCase().replace(/[.,!?।]+$/, "") };
-  if (PHONE.test(latinDigits(text))) return { kind: "phone" };
+  if (PHONE.test(latinDigits(text)) || hasSpokenNumber(text)) return { kind: "phone" };
   return { kind: "ok" };
 }
 

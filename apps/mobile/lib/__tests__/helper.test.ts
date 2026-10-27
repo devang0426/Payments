@@ -2,7 +2,7 @@
 // on the phone (SecureStore); calling only opens the dialer.
 import { createHelperStore, decideHelpVoice, makeHelper, telUri } from "../helper";
 import { speechTexts } from "../speech";
-import { CANCEL_PHRASES, normalizeUtterance } from "../voiceConfirm";
+import { CANCEL_PHRASES, LISTEN_WINDOW_MS, STRICT_YES, normalizeUtterance } from "../voiceConfirm";
 import { memoryStore } from "./fixtures";
 
 const KEY = "flowpay.helper.v1";
@@ -80,8 +80,8 @@ describe("decideHelpVoice: 'Should I call Beta?'", () => {
     expect(decideHelpVoice(heard(t))).toBe("notClear");
   });
 
-  it("a late answer (after 5 s) is ignored", () => {
-    expect(decideHelpVoice(heard("haan", 5001))).toBe("ignore");
+  it("a late answer (after the listening window) is ignored", () => {
+    expect(decideHelpVoice(heard("haan", LISTEN_WINDOW_MS + 1))).toBe("ignore");
   });
 
   it("silence is ignored", () => {
@@ -95,7 +95,7 @@ describe("decideHelpVoice: 'Should I call Beta?'", () => {
 
 describe("helper speech", () => {
   it("asks in both languages and never ends with an answer word", () => {
-    const answerWords = new Set(["yes", "haan", "ok", "हाँ", ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
+    const answerWords = new Set([...STRICT_YES.filter((p) => !p.includes(" ")), ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
     for (const lang of ["en-IN", "hi-IN"] as const) {
       const t = speechTexts(lang);
       for (const line of [t.helperAsk("Beta"), t.helperCalling("Beta")]) {

@@ -76,7 +76,8 @@ export function checkPayment(p: {
   return { ok: true };
 }
 
-// Unusual payments (M13) make an AMBER card: allowed, but confirming needs a second yes or the tap
+// Unusual payments (M13) make an AMBER card (since 2026-10-22: a large amount or late night; the first
+// payment to someone alone stays green, see cardTone): allowed, but confirming needs a second yes or the tap
 // "Yes, I'm sure". Only successful payments count as "paid before". Fixed order.
 export type PaymentWarning = "FIRST_PAYMENT" | "UNUSUAL_AMOUNT" | "LATE_NIGHT";
 export const UNUSUAL_FACTOR = 3;
@@ -107,9 +108,13 @@ export function paymentWarnings(p: { payeeId: string; amountPaise: number; histo
 
 export type CardTone = "green" | "amber" | "red";
 
+// 2026-10-22 (user's choice): the first payment to someone alone is green: it is still said and shown,
+// and the new-payee limit (₹500 for 24 h) already applies. Large amounts and late night stay amber.
+const SECOND_YES: ReadonlySet<PaymentWarning> = new Set(["UNUSUAL_AMOUNT", "LATE_NIGHT"]);
+
 export function cardTone(rule: RuleResult, warnings: PaymentWarning[]): CardTone {
   if (!rule.ok) return "red";
-  return warnings.length > 0 ? "amber" : "green";
+  return warnings.some((w) => SECOND_YES.has(w)) ? "amber" : "green";
 }
 
 // Over the daily limit (M13): offer what's left today, in whole rupees, at least ₹1. Computed by the

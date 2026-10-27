@@ -47,8 +47,8 @@ the same persisted lock (one confirm per txnRef).
 
 **Listening**
 1. The phone speaks the question (on an amber card: the question, then the warning).
-2. The mic opens only after TTS `onDone`, plus a 250 ms settle. One listen, **5-second window**: a
-   result finalized more than 5 s after the mic opened is ignored ("late yes").
+2. The mic opens only after TTS `onDone`, plus a 250 ms settle. One listen, **8-second window**
+   (5 s until 2026-10-22): a result finalized more than 8 s after the mic opened is ignored ("late yes").
 3. The card also has a **mic button** (development/release builds). Tapping it stops any speech and
    opens one listen after 250 ms, with the same window and rules. It's how the user resumes after a
    pause or a "not clear".
@@ -74,7 +74,7 @@ the same persisted lock (one confirm per txnRef).
 
 **Deciding** (in this order; every branch is code, not the LLM)
 1. **Ignore** (no action, no message) if: the card's txnRef isn't the current card or is already
-   used; the result came after the 5 s window; the transcript is empty; or it's a **TTS echo** (the
+   used; the result came after the 8 s window; the transcript is empty; or it's a **TTS echo** (the
    normalized transcript has ≥ 2 words and is contained in the text the phone just spoke, or contains it).
 2. **Cancel** (on any card, no server call): speak "Cancelled", close the card and clear the draft. The
    txnRef is marked used, so it can never be confirmed.
@@ -196,7 +196,7 @@ or exporting history.
   the LLM. UPI IDs and phone numbers in the command are caught before sending. Reminders are stored
   structured (payeeId, paise, date). A hijacked model can at most show a card for a saved payee, within
   limits, which the user still has to confirm and then enter a PIN.
-- **Limits:** ≤ 4 LLM steps and ≤ 6 tool calls per user turn, 20 s per turn (phone), 10 s per LLM call,
+- **Limits:** ≤ 4 LLM steps and ≤ 6 tool calls per user turn, 20 s per turn (phone), 6 s per LLM call (was 10 s; under the phone's 7 s per attempt since 2026-10-22),
   `max_tokens` ~200, ≤ 6 user turns and ≤ 8 KB per request, 30 requests/min per IP, the OpenRouter
   key's credit limit as the hard cost cap, optional `models` fallback.
 - **Logging.** Server: error type, step count, tool names, latency, model used. Never: user text,
@@ -283,7 +283,7 @@ suggestions; storing conversation transcripts across sessions; Swiggy or other c
   payment → dropped.
 - **Loop:** only `find_payee` makes another step (the phone answers `{ match, count }`); every other
   tool ends the turn. ≤ 4 LLM steps and ≤ 6 tool calls per user turn (server checks the request),
-  20 s per turn on the phone, 10 s per LLM call, `max_tokens` 200, 30 requests/min per IP.
+  20 s per turn on the phone, 6 s per LLM call (10 s until 2026-10-22), `max_tokens` 200, 30 requests/min per IP.
 - **OpenRouter:** `tool_choice: "auto"` (the docs list no "required"), `parallel_tool_calls: true`.
   `provider.require_parameters` was dropped: together with `parallel_tool_calls` no provider matched
   (HTTP 404). A reply without tool calls = unknown.
@@ -291,6 +291,25 @@ suggestions; storing conversation transcripts across sessions; Swiggy or other c
   Never text, spans or arguments.
 - **Later polish (code, with tests):** "kitna bheja" (how much) without "dikhao" (show) read as
   `show_recent` → turned into `show_spending` (period read by code); the same non-payment action twice → once.
+
+## Voice confirmation changes, 2026-10-22 ("one yes should be enough", the user's choice)
+
+Supersedes the matching parts of "Voice confirmation" above; the code is `lib/voiceConfirm.ts` and
+`lib/rules.ts cardTone`, pinned by tests.
+- **Window 8 s** (was 5 s).
+- **Strict yes list extended** with what speech recognizers write for the same answers: han, haa, ha,
+  haan haan, han han, han ji, ha ji, haa ji, ji haan, ji han, yes yes, yeah, ok, okay, ok ji, theek hai,
+  thik hai, theek hai bhejo, theek hai bhej do, bhejo, bhej do, haan bhej, han bhejo, han bhej do,
+  ha bhejo, ok bhej do, okay bhejo, okay send, हा, हाँ हाँ, जी हाँ, ठीक है, ठीक है भेज दो, ओके,
+  ओके भेज दो, भेजो, भेज दो. Still the whole utterance; no phrase contains a no-word (tested); cases #6
+  ("theek hai", "haan haan") now confirm; "haan ok" is still not clear. Yes-words for "yes + change"
+  also: han, haa, ha, okay, theek, thik, हा, ओके, ठीक.
+- **"Not clear" asks once more aloud** ("Sorry, I didn't catch that. Say haan to send it, or nahi to
+  stop it." / for a relative amount: "Please say the full amount…") and opens the mic again, once per
+  card (`MAX_NOT_CLEAR_ASKS`); after that only the hint and the tap button.
+- **Amber only for an unusually large amount or late night.** The first payment to someone alone is
+  green: still spoken ("This is your first payment to Mummy.") and shown as a note; the new-payee limit
+  (₹500 for 24 h) still applies.
 
 ## M15 as built (2026-10-19)
 

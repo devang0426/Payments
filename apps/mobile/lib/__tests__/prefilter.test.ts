@@ -45,6 +45,30 @@ describe("screenText: what may go to the server", () => {
     expect(screenText(text)).toEqual({ kind: "phone" });
   });
 
+  // A number read out as words (speech-to-text doesn't always turn it into digits): 10 or more
+  // digit words / digits in a row, at least one of them a word.
+  it.each([
+    ["nine eight seven six five four three two one zero ko 500 bhejo"],
+    ["nau aath saat chhe paanch chaar teen do ek shunya ko bhejo"],
+    ["98765 four three two one zero"], // digits and words mixed
+    ["double nine eight seven six five four three two one"], // "double nine" = 2
+    ["nine triple eight seven six five four three two"], // "triple eight" = 3
+    ["नौ आठ सात छह पांच चार तीन दो एक शून्य को ५०० भेजो"],
+    ["Nine, eight, seven, six, five, four, three, two, one, zero"], // commas and capitals
+  ])("%j → phone (spoken digits)", (text) => {
+    expect(screenText(text)).toEqual({ kind: "phone" });
+  });
+
+  it.each([
+    ["Mummy ko ek sau do bhejo"], // "do" = give; a short run is an amount
+    ["paanch sau do do"],
+    ["nine eight seven six five four three two one"], // only 9
+    ["Papa ko teen hazaar do, Rahul ko paanch sau"],
+    ["1234567890"], // digits only: the digit rule above decides (not a mobile)
+  ])("%j → ok (no long run of spoken digits)", (text) => {
+    expect(screenText(text)).toEqual({ kind: "ok" });
+  });
+
   it("a UPI ID and a phone number together → upiId (so the facts screen can open)", () => {
     expect(screenText("x.fake@upi 9876543210")).toEqual({ kind: "upiId", vpa: "x.fake@upi" });
   });

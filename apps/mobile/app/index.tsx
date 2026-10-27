@@ -163,11 +163,17 @@ export default function HomeScreen() {
       // open. Ask the user what happened (the oldest one first) instead of greeting.
       if (!recoveryChecked.current) {
         recoveryChecked.current = true;
-        historyStore.listPending().then((pending) => {
-          const unresolved = pending.filter((e) => e.txnRef !== paymentInFlight()).at(-1);
-          if (unresolved) router.push({ pathname: "/receipt", params: { txnRef: unresolved.txnRef, recovered: "1" } });
-          else if (focused.current) resume();
-        });
+        historyStore
+          .listPending()
+          .then((pending) => {
+            const unresolved = pending.filter((e) => e.txnRef !== paymentInFlight()).at(-1);
+            if (unresolved) router.push({ pathname: "/receipt", params: { txnRef: unresolved.txnRef, recovered: "1" } });
+            else if (focused.current) resume();
+          })
+          // History unreadable: nothing to ask about here (payments stay blocked by the rules); greet anyway.
+          .catch(() => {
+            if (focused.current) resume();
+          });
       } else {
         resume();
       }
@@ -649,6 +655,8 @@ export default function HomeScreen() {
         {hasTurns && <Link label={s.startOver} onPress={startOver} />}
         {micReady && <Link label={typing ? s.hideTyping : s.typeInstead} onPress={() => setTyping(!typing)} />}
         <Link label={s.payments} onPress={() => router.push("/history")} />
+        {/* Scan a payee's UPI QR → the Add payee form, filled (saving still needs the fingerprint/PIN). */}
+        <Link label={s.addByQr} onPress={() => router.push({ pathname: "/scan-qr", params: { then: "add" } })} />
       </View>
 
       {health !== "ok" && health !== "checking" && (

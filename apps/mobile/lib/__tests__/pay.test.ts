@@ -1,7 +1,7 @@
 // sendPayment re-checks everything right before the UPI app opens: the payee and history are read
 // again from storage, and nothing is written or launched unless the rules still pass.
 import { createHistoryStore } from "../history";
-import { sendPayment, type Launcher } from "../pay";
+import { paymentInFlight, sendPayment, type Launcher, type StallWatcher } from "../pay";
 import { createPayeeStore, type Payee } from "../payees";
 import { ist, memoryStore } from "./fixtures";
 
@@ -32,13 +32,100 @@ function spyLauncher(history: ReturnType<typeof createHistoryStore>, result: "su
   return { launch, calls };
 }
 
+const neverStalls: StallWatcher = () => () => {};
+
 const send = (
   deps: { payees: ReturnType<typeof createPayeeStore>; history: ReturnType<typeof createHistoryStore> },
   payee: Payee,
   launch: Launcher,
   amountPaise = 50000,
   txnRef = "FP1",
-) => sendPayment({ payee, amountPaise, txnRef, now: NOW }, launch, deps);
+  watchStall: StallWatcher = neverStalls,
+) => sendPayment({ payee, amountPaise, txnRef, now: NOW }, launch, deps, watchStall);
+
+// A launcher whose result the test hands over later (or never), and a stall the test fires by hand.
+function controlledLaunch() {
+  let settle: { resolve: (s: "success" | "failed" | "unknown") => void; reject: (e: Error) => void } | null = null;
+  const launch: Launcher = () => new Promise((resolve, reject) => (settle = { resolve, reject }));
+  return { launch, settle: () => settle! };
+}
+function manualStall() {
+  let fire: (() => void) | null = null;
+  let stopped = false;
+  const watch: StallWatcher = (onStall) => {
+    fire = onStall;
+    return () => {
+      stopped = true;
+    };
+  };
+  return { watch, fire: () => fire!(), stopped: () => stopped };
+}
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+describe("sendPayment: the UPI app's result never comes back (FlowPay recreated while PhonePe was open)", () => {
+  it("a stall → unknown (counts toward the limit, the receipt asks), and the payment is no longer in flight", async () => {
+    const { payees, history, payee } = await setup();
+    const { launch } = controlledLaunch();
+    const stall = manualStall();
+    const result = send({ payees, history }, payee, launch, 50000, "FP1", stall.watch);
+    await flush();
+    expect(paymentInFlight()).toBe("FP1");
+    stall.fire();
+    expect(await result).toEqual({ kind: "sent", status: "unknown", launchFailed: false });
+    expect(paymentInFlight()).toBeNull();
+    expect((await history.load()).entries[0]).toMatchObject({ txnRef: "FP1", status: "unknown" });
+  });
+
+  it("a result that still arrives after the stall is saved then", async () => {
+    const { payees, history, payee } = await setup();
+    const { launch, settle } = controlledLaunch();
+    const stall = manualStall();
+    const result = send({ payees, history }, payee, launch, 50000, "FP1", stall.watch);
+    await flush();
+    stall.fire();
+    await result;
+    settle().resolve("success");
+    await flush();
+    await flush();
+    expect((await history.load()).entries[0]).toMatchObject({ txnRef: "FP1", status: "success" });
+  });
+
+  it("a launch error after the stall does NOT mark it failed (PhonePe was open; money may have moved)", async () => {
+    const { payees, history, payee } = await setup();
+    const { launch, settle } = controlledLaunch();
+    const stall = manualStall();
+    const result = send({ payees, history }, payee, launch, 50000, "FP1", stall.watch);
+    await flush();
+    stall.fire();
+    await result;
+    settle().reject(new Error("late"));
+    await flush();
+    await flush();
+    expect((await history.load()).entries[0]).toMatchObject({ txnRef: "FP1", status: "unknown" });
+  });
+
+  it("a normal result stops the watcher, and a stall after it changes nothing", async () => {
+    const { payees, history, payee } = await setup();
+    const { launch, settle } = controlledLaunch();
+    const stall = manualStall();
+    const result = send({ payees, history }, payee, launch, 50000, "FP1", stall.watch);
+    await flush();
+    settle().resolve("success");
+    expect(await result).toEqual({ kind: "sent", status: "success", launchFailed: false });
+    expect(stall.stopped()).toBe(true);
+    stall.fire();
+    await flush();
+    expect((await history.load()).entries[0]).toMatchObject({ txnRef: "FP1", status: "success" });
+  });
+
+  it("a blocked payment never starts watching", async () => {
+    const { payees, history, payee } = await setup();
+    await payees.remove("p1");
+    const watch = jest.fn(neverStalls);
+    await send({ payees, history }, payee, spyLauncher(history).launch, 50000, "FP1", watch);
+    expect(watch).not.toHaveBeenCalled();
+  });
+});
 
 describe("sendPayment: rules pass", () => {
   it("writes the pending entry before launching, then saves the result", async () => {

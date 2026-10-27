@@ -11,6 +11,7 @@ import {
   newPayeeStatus,
   paymentWarnings,
   sentTodayPaise,
+  type PaymentWarning,
 } from "../rules";
 import { MUMMY, PAPA, entry, ist } from "./fixtures";
 
@@ -323,6 +324,23 @@ describe("cardTone", () => {
   });
   it("allowed, no warning → green", () => {
     expect(cardTone({ ok: true }, [])).toBe("green");
+  });
+
+  // 2026-10-22 (user's choice): "first payment to this person" alone no longer needs a second yes. It is
+  // still spoken and shown on the card; the new-payee limit (₹500 for 24 h) still applies.
+  it("allowed, only 'first payment to this person' → green: one yes is enough", () => {
+    expect(cardTone({ ok: true }, ["FIRST_PAYMENT"])).toBe("green");
+  });
+
+  it.each<[PaymentWarning[]]>([[["UNUSUAL_AMOUNT"]], [["LATE_NIGHT"]], [["FIRST_PAYMENT", "LATE_NIGHT"]]])(
+    "an unusually large amount or late at night still needs the second yes: %j → amber",
+    (warnings) => {
+      expect(cardTone({ ok: true }, warnings)).toBe("amber");
+    },
+  );
+
+  it("a rule failure stays red even with only the first-payment warning", () => {
+    expect(cardTone({ ok: false, reason: "NEW_PAYEE_LIMIT" }, ["FIRST_PAYMENT"])).toBe("red");
   });
 });
 

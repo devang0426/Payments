@@ -40,7 +40,15 @@ If something doesn't match, note the step number and what you saw or heard (a sc
 - [ ] 2.3 On a ₹500 card say "nahi, teen sau kar do" → a **new** ₹300 card; "haan" → done.
 - [ ] 2.4 On a card say "nahi" → "Cancelled" is spoken **completely**; the card closes.
 - [ ] 2.5 On a card say "ruko" → "Okay, tap the mic when you're ready"; card stays; tap the mic → "haan" → done.
-- [ ] 2.6 On a card say nothing for 6 s, then "haan" late → nothing happens (late yes ignored); Yes button still works.
+- [ ] 2.6 On a card say nothing for 10 s, then "haan" late → nothing happens (late yes ignored); Yes button still works.
+- [ ] 2.6a **One yes is enough** (2026-10-22): say "han", "okay", "theek hai" or "ji haan" on a card →
+      it sends. A first payment to someone → the card says "This is your first payment to …" and **one**
+      "haan" sends it.
+- [ ] 2.6b Say something unclear on a card ("kya?") → it says "Sorry, I didn't catch that. Say haan to send
+      it, or nahi to stop it." and listens again → "haan" → sends. Unclear twice → only the hint; tap Yes.
+- [ ] 2.6c "okay wait" / "han nahi" on a card → never sends.
+- [ ] 2.6d A large amount (over 3× what you usually send that person) or after 11 PM → still asks "Are you
+      sure? Say yes again." (two yeses, by design).
 - [ ] 2.7 Double-tap **Yes** fast → only one payment (one receipt).
 - [ ] 2.8 "Papa ko pichhli baar jitna" → card with Papa's last amount.
 
@@ -145,6 +153,8 @@ If something doesn't match, note the step number and what you saw or heard (a sc
       save** (back) → the payee is unchanged.
 - [ ] 13.6 Deny the camera once → "FlowPay can't use the camera…" + "Open phone settings"; typing still works.
 - [ ] 13.7 A QR with an amount in it (a shop's "pay ₹500" QR) → only the UPI ID and name are used; no amount anywhere.
+- [ ] 13.8 From **Home**: tap **📷 Add payee (QR)** (bottom row) → scan → the Add payee form opens filled →
+      Save → fingerprint/PIN → back on Home, which greets and listens again. Cancel on the scanner → back on Home, nothing added.
 
 ## 14. On her phone (with her)
 

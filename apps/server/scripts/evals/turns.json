@@ -507,7 +507,7 @@
         "paise": 30000
       },
       "heard": "haan",
-      "heardAtMs": 5300,
+      "heardAtMs": 8300,
       "expect": "ignore"
     },
     {
@@ -549,7 +549,28 @@
         "name": "Mummy",
         "paise": 30000
       },
-      "heard": "ok",
+      "heard": "haan ok",
+      "expect": "notClear"
+    },
+    {
+      "id": "v15b",
+      "group": "voice",
+      "card": { "name": "Mummy", "paise": 30000 },
+      "heard": "Han",
+      "expect": "confirm"
+    },
+    {
+      "id": "v15c",
+      "group": "voice",
+      "card": { "name": "Mummy", "paise": 30000 },
+      "heard": "theek hai",
+      "expect": "confirm"
+    },
+    {
+      "id": "v15d",
+      "group": "voiceGuard",
+      "card": { "name": "Mummy", "paise": 30000 },
+      "heard": "okay wait",
       "expect": "notClear"
     },
     {

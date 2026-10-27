@@ -48,7 +48,7 @@ import {
 } from "@/lib/stores";
 import { upiLauncher } from "@/lib/upiLaunch";
 import { listenOnce, stopListening, voiceAvailable } from "@/lib/voice";
-import { LISTEN_WINDOW_MS, decideVoice, type TurnOutcome, type VoiceDecision } from "@/lib/voiceConfirm";
+import { LISTEN_WINDOW_MS, MAX_NOT_CLEAR_ASKS, decideVoice, type TurnOutcome, type VoiceDecision } from "@/lib/voiceConfirm";
 import { strings } from "@/lib/strings";
 import { colors, fontSize, fonts, spacing } from "@/lib/theme";
 
@@ -58,6 +58,7 @@ const SETTLE_MS = 250; // after our own speech ends, before the mic opens (less 
 type State =
   | { kind: "loading" }
   | { kind: "missing" }
+  | { kind: "loadFailed" } // payees, history or the lock couldn't be read: nothing can be checked
   | { kind: "modeChanged" } // rehearsal mode was switched after this payment was prepared
   | { kind: "blocked"; reason: BlockReason } // the last-moment re-check in sendPayment said no
   | {
@@ -84,12 +85,15 @@ export default function ConfirmScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [{ payees }, { entries, corrupt }, used, rehearsalOn] = await Promise.all([
-        payeeStore.load(),
-        historyStore.load(),
-        confirmLock.isUsed(txnRef),
-        rehearsal.load(),
-      ]);
+      let loaded;
+      try {
+        loaded = await Promise.all([payeeStore.load(), historyStore.load(), confirmLock.isUsed(txnRef), rehearsal.load()]);
+      } catch {
+        // Storage refused (e.g. SecureStore can't decrypt after a backup restore): say so, never hang.
+        if (!cancelled) setState({ kind: "loadFailed" });
+        return;
+      }
+      const [{ payees }, { entries, corrupt }, used, rehearsalOn] = loaded;
       const payee = payees.find((p) => p.id === params.payeeId);
       if (cancelled) return;
       if (!payee || !txnRef) return setState({ kind: "missing" });
@@ -168,6 +172,7 @@ export default function ConfirmScreen() {
   const sendingRef = useRef(false);
   const lastSpoken = useRef("");
   const reasks = useRef(0);
+  const notClearAsks = useRef(0); // spoken "Sorry, I didn't catch that…" so far on this card
   const amberStep = useRef<1 | 2>(1); // 2 after "Are you sure? Say yes again."
   // The conversation after a change, kept only if that change becomes a new card.
   const changedConversation = useRef<ConversationState | null>(null);
@@ -286,7 +291,11 @@ export default function ConfirmScreen() {
         setVoiceNote(strings.voice.tapOnly);
         return say(t.tapOnly, false);
       case "notClear":
-        return setVoiceNote(decision.hint === "fullAmount" ? s.fullAmount : s.notClear);
+        setVoiceNote(decision.hint === "fullAmount" ? s.fullAmount : s.notClear);
+        // Once per card: ask again aloud and open the mic (2026-10-22); after that, the tap button.
+        if (notClearAsks.current >= MAX_NOT_CLEAR_ASKS) return;
+        notClearAsks.current += 1;
+        return say(decision.hint === "fullAmount" ? t.fullAmountAsk : t.notClearAsk, true);
     }
   }
 
@@ -377,11 +386,11 @@ export default function ConfirmScreen() {
     );
   }
 
-  if (state.kind === "missing") {
+  if (state.kind === "missing" || state.kind === "loadFailed") {
     return (
       <Screen>
         <RehearsalBanner />
-        <Notice text={s.payeeMissing} />
+        <Notice text={state.kind === "missing" ? s.payeeMissing : s.loadFailed} />
         <Button variant="secondary" label={strings.common.back} onPress={() => router.back()} />
       </Screen>
     );
@@ -486,6 +495,10 @@ export default function ConfirmScreen() {
               title={strings.amber.title}
               text={warnings.map((w) => strings.amber.warnings[w](payee.displayName)).join("\n")}
             />
+          )}
+          {/* Green with a note (2026-10-22): "First payment to Mummy." is still shown; one yes sends it. */}
+          {tone === "green" && warnings.length > 0 && (
+            <Notice tone="info" text={warnings.map((w) => strings.amber.warnings[w](payee.displayName)).join("\n")} />
           )}
           {error && <Notice text={error} />}
           {listening && <Notice tone="info" text={s.listeningYes} />}

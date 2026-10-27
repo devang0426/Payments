@@ -4,13 +4,21 @@
 // speech may be a change does it return { kind: "askServer" }; the screen then calls /turn, resolves
 // the payee on the phone and calls decideVoice again with the outcome.
 
-export const LISTEN_WINDOW_MS = 5000;
+// 2026-10-22 (user's choice, "one yes should be enough"): window 5 s → 8 s; the yes list also takes the
+// spellings the speech recognizer writes for the same answers; "not clear" asks once more aloud.
+export const LISTEN_WINDOW_MS = 8000;
 export const MAX_REASKS = 2;
+export const MAX_NOT_CLEAR_ASKS = 1; // "Sorry, say haan to send it…" + the mic once more, per card
 
 // The whole utterance (after normalization) must be one of these.
 export const STRICT_YES = [
   "yes", "yes please", "yes send", "yes send it", "haan", "haan ji", "haanji", "haan bhejo", "haan bhej do",
   "ok bhejo", "हाँ", "हाँ जी", "हाँ भेजो", "हाँ भेज दो",
+  // How recognizers spell the same answers, and other plain ways of saying yes (2026-10-22).
+  "han", "haa", "ha", "haan haan", "han han", "han ji", "ha ji", "haa ji", "ji haan", "ji han", "yes yes", "yeah",
+  "ok", "okay", "ok ji", "theek hai", "thik hai", "theek hai bhejo", "theek hai bhej do", "bhejo", "bhej do",
+  "haan bhej", "han bhejo", "han bhej do", "ha bhejo", "ok bhej do", "okay bhejo", "okay send", "हा", "हाँ हाँ", "जी हाँ", "ठीक है", "ठीक है भेज दो",
+  "ओके", "ओके भेज दो", "भेजो", "भेज दो",
 ] as const;
 export const CANCEL_PHRASES = [
   "nahi", "nahin", "no", "na", "cancel", "nahi bhejo", "nahin bhejo", "mat bhejo", "cancel karo", "rehne do",
@@ -19,7 +27,7 @@ export const CANCEL_PHRASES = [
 export const PAUSE_PHRASES = ["ruko", "rukiye", "wait", "रुको", "रुकिए"] as const;
 
 // "Yes + change" only counts when one of these is the FIRST word.
-const YES_WORDS = ["yes", "haan", "ok", "हाँ"];
+const YES_WORDS = ["yes", "haan", "ok", "हाँ", "han", "haa", "ha", "okay", "theek", "thik", "हा", "ओके", "ठीक"];
 // Any of these vetoes a confirm. "na" is handled separately (only alone or before a verb).
 const NEGATIONS = ["no", "not", "nahi", "nahin", "mat", "ruko", "rukiye", "wait", "cancel", "stop", "नहीं", "मत", "रुको", "रुकिए"];
 const VERBS = ["bhej", "bhejo", "bhejna", "kar", "karo", "karna", "do", "dena", "भेज", "भेजो", "कर", "करो", "दो"];

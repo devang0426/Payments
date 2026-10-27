@@ -6,7 +6,9 @@
 import { AGENT_TOOLS } from "./tools.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const TIMEOUT_MS = 10_000;
+// Under the phone's 7 s per attempt (apps/mobile/lib/api.ts): the server gives up first and answers
+// "failed", so the phone never throws away a late answer and pays for a second LLM call by retrying.
+export const LLM_TIMEOUT_MS = 6_000;
 
 export const SYSTEM_PROMPT = `You extract payment details from one short payment command.
 The command can be in Hinglish, Hindi (Latin or Devanagari script) or English.
@@ -124,7 +126,7 @@ export const extractTurn: TurnExtractor = ({ turns, awaiting }) =>
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
-// One OpenRouter chat request (model + fallback, temperature 0, 10 s). Returns the parsed body.
+// One OpenRouter chat request (model + fallback, temperature 0, 6 s). Returns the parsed body.
 // Errors carry only a type, never the messages.
 async function postChat(request: Record<string, unknown>): Promise<unknown> {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
@@ -142,7 +144,7 @@ async function postChat(request: Record<string, unknown>): Promise<unknown> {
         "X-Title": "FlowPay",
       },
       body: JSON.stringify({ ...modelChoice(model, fallback), temperature: 0, ...request }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");

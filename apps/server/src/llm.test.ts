@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  LLM_TIMEOUT_MS,
   LlmError,
   SYSTEM_PROMPT,
   TURN_SYSTEM_PROMPT,
@@ -106,6 +107,12 @@ describe("extractPayment", () => {
   it("fails on a timeout", async () => {
     fetchMock.mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError"));
     await expectLlmError("TIMEOUT");
+  });
+
+  // The phone waits 7 s per attempt (apps/mobile/lib/api.ts PARSE_ATTEMPT_TIMEOUT_MS) and retries
+  // only when no answer came: the server must give up first, with time left to send its answer.
+  it("gives up on OpenRouter well before the phone gives up on the server", () => {
+    expect(LLM_TIMEOUT_MS).toBeLessThanOrEqual(6_000);
   });
 
   it("fails on a network error", async () => {

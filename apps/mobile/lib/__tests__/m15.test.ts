@@ -7,7 +7,7 @@ import { formatRupees, spokenRupees } from "../format";
 import { DEFAULT_PREFS, applyPreference, createPreferenceStore, pickSpeechLang } from "../preferences";
 import { speechTexts } from "../speech";
 import { strings } from "../strings";
-import { CANCEL_PHRASES, normalizeUtterance } from "../voiceConfirm";
+import { CANCEL_PHRASES, STRICT_YES, normalizeUtterance } from "../voiceConfirm";
 import { MUMMY, PAPA, PAYEES, RAHUL_SHARMA, memoryStore } from "./fixtures";
 
 describe("preferences", () => {
@@ -183,7 +183,7 @@ describe("planActions with M15 actions", () => {
 
 describe("M15 spoken lines never end with an answer word", () => {
   it("both languages", () => {
-    const answerWords = new Set(["yes", "haan", "ok", "हाँ", ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
+    const answerWords = new Set([...STRICT_YES.filter((p) => !p.includes(" ")), ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
     for (const lang of ["en-IN", "hi-IN"] as const) {
       const t = speechTexts(lang);
       const lines = [

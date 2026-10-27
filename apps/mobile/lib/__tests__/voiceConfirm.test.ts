@@ -5,6 +5,7 @@
 import {
   CANCEL_PHRASES,
   LISTEN_WINDOW_MS,
+  MAX_NOT_CLEAR_ASKS,
   MAX_REASKS,
   PAUSE_PHRASES,
   STRICT_YES,
@@ -63,18 +64,27 @@ const notClear = { kind: "notClear" };
 const cancel = { kind: "cancel" };
 
 describe("constants and lists (pinned to docs/AGENT.md)", () => {
-  it("5 s window, 2 re-asks", () => {
-    expect(LISTEN_WINDOW_MS).toBe(5000);
+  it("8 s window (was 5 s until 2026-10-22), 2 re-asks, 1 spoken 'not clear' ask", () => {
+    expect(LISTEN_WINDOW_MS).toBe(8000);
     expect(MAX_REASKS).toBe(2);
+    expect(MAX_NOT_CLEAR_ASKS).toBe(1);
   });
 
-  it("the strict-yes list", () => {
+  it("the strict-yes list (extended 2026-10-22 with recognizer spellings, user's choice)", () => {
     expect([...STRICT_YES].sort()).toEqual(
       [
         "yes", "yes please", "yes send", "yes send it", "haan", "haan ji", "haanji", "haan bhejo", "haan bhej do",
         "ok bhejo", "हाँ", "हाँ जी", "हाँ भेजो", "हाँ भेज दो",
+        "han", "haa", "ha", "haan haan", "han han", "han ji", "ha ji", "haa ji", "ji haan", "ji han", "yes yes", "yeah",
+        "ok", "okay", "ok ji", "theek hai", "thik hai", "theek hai bhejo", "theek hai bhej do", "bhejo", "bhej do",
+        "haan bhej", "han bhejo", "han bhej do", "ha bhejo", "ok bhej do", "okay bhejo", "okay send", "हा", "हाँ हाँ",
+        "जी हाँ", "ठीक है", "ठीक है भेज दो", "ओके", "ओके भेज दो", "भेजो", "भेज दो",
       ].sort(),
     );
+  });
+
+  it("no yes phrase contains a no-word", () => {
+    for (const phrase of STRICT_YES) expect(phrase.split(" ").some((w) => ["no", "nahi", "nahin", "mat", "na", "नहीं", "मत", "ना"].includes(w))).toBe(false);
   });
 
   it("the cancel list", () => {
@@ -120,9 +130,28 @@ describe("strict yes (no server call)", () => {
     expect(hear(said)).toEqual({ askedServer: false, decision: confirm });
   });
 
-  it.each([["theek hai"], ["haan haan"]])("#6 %j is not on the list → server → not clear", (said) => {
-    expect(hear(said, { turn: { kind: "other" } })).toEqual({ askedServer: true, decision: notClear });
+  // #6 changed 2026-10-22: "theek hai" and "haan haan" are plain yeses now (the user asked for one yes).
+  it.each([["theek hai"], ["haan haan"]])("#6 %j → confirm (no server call)", (said) => {
+    expect(hear(said)).toEqual({ askedServer: false, decision: confirm });
   });
+
+  // How speech recognizers spell "haan" etc. (2026-10-22): one answer is enough.
+  it.each([
+    ["Han"], ["Haa"], ["ha"], ["han ji"], ["Ha ji"], ["ji haan"], ["okay"], ["OK"], ["ok ji"], ["yeah"], ["yes yes"],
+    ["thik hai"], ["theek hai bhej do"], ["bhejo"], ["bhej do"], ["okay bhejo"], ["हा"], ["हां हां"], ["जी हां"],
+    ["ठीक है"], ["ओके"], ["भेज दो"], ["Han, bhejo na"],
+  ])("recognizer spelling %j → confirm", (said) => {
+    expect(hear(said)).toEqual({ askedServer: false, decision: confirm });
+  });
+
+  it.each([["han nahi"], ["ok ruko"], ["theek hai mat bhejo"], ["na bhejo"], ["okay wait"], ["bhejo mat"]])(
+    "a yes-word with a no in it is never a yes: %j",
+    (said) => {
+      for (const turn of [{ kind: "other" } as const, same300, { kind: "failed" } as const]) {
+        expect(hear(said, { turn }).decision.kind).not.toBe("confirm");
+      }
+    },
+  );
 
   it('#13 "haan bhejo na": a trailing na is a softener → confirm', () => {
     expect(hear("haan bhejo na")).toEqual({ askedServer: false, decision: confirm });
@@ -245,12 +274,12 @@ describe("pause (no server call)", () => {
 });
 
 describe("late, stale and echoed results are ignored", () => {
-  it("#28 finalized at 5.3 s → ignored", () => {
-    expect(hear("haan", { atMs: 5300 }).decision).toEqual({ kind: "ignore" });
+  it("#28 finalized at 8.3 s → ignored", () => {
+    expect(hear("haan", { atMs: 8300 }).decision).toEqual({ kind: "ignore" });
   });
 
-  it("#29 finalized at 4.6 s → confirm; exactly 5 s still counts, 5.001 s doesn't", () => {
-    expect(hear("haan", { atMs: 4600 }).decision).toEqual(confirm);
+  it("#29 finalized at 7.6 s → confirm; exactly 8 s still counts, 8.001 s doesn't", () => {
+    expect(hear("haan", { atMs: 7600 }).decision).toEqual(confirm);
     expect(hear("haan", { atMs: LISTEN_WINDOW_MS }).decision).toEqual(confirm);
     expect(hear("haan", { atMs: LISTEN_WINDOW_MS + 1 }).decision).toEqual({ kind: "ignore" });
   });
@@ -338,8 +367,8 @@ describe("amber cards need a second spoken yes", () => {
 
 describe("carried over from the M8b voice-yes tests: these never confirm", () => {
   it.each([
-    ["no"], ["nahi"], ["नहीं"], ["yes no"], ["haan nahi"], ["yeah"], ["send it"], ["ok"],
-    ["haan haan"], ["yesterday"], ["send 500 rupees to mummy yes"],
+    ["no"], ["nahi"], ["नहीं"], ["yes no"], ["haan nahi"], ["send it"], ["yesterday"],
+    ["send 500 rupees to mummy yes"], ["hahaha"], ["haan ji nahi"],
   ])("%j (even if /turn wrongly reported the card's own payee + amount)", (said) => {
     for (const turn of [{ kind: "other" } as const, same300, { kind: "failed" } as const]) {
       const { decision } = hear(said, { turn, lastSpoken: "" });
@@ -352,8 +381,13 @@ describe("carried over from the M8b voice-yes tests: these never confirm", () =>
     expect(hear("yes but send 1000", { turn }).decision).toEqual({ kind: "newCard", payeeId: MUMMY, paise: 100000 });
   });
 
-  it.each([["ok"], ["haan haan"], ["yes yes"]])("%j: yes-words with no change in them → not clear", (said) => {
-    expect(hear(said, { turn: same300 }).decision).toEqual(notClear);
+  // Until 2026-10-22 these were "not clear"; now they are plain yeses on the list (no server call).
+  it.each([["ok"], ["haan haan"], ["yes yes"]])("%j → confirm", (said) => {
+    expect(hear(said, { turn: same300 })).toEqual({ askedServer: false, decision: confirm });
+  });
+
+  it('"haan ok" (yes-words only, not on the list) → not clear, whatever the server made of it', () => {
+    expect(hear("haan ok", { turn: same300 }).decision).toEqual(notClear);
   });
 });
 
@@ -370,7 +404,7 @@ describe("decideSaveVoice (reminder card)", () => {
       heard: { transcript, forId: "draft-1", listenStartedAt: T, resultAt: T + (o.atMs ?? 1500), lastSpoken: o.lastSpoken ?? ASK },
     });
 
-  it.each([["haan"], ["हां"], ["haan ji"], ["yes please"], ["ok bhejo"], ["haan bhejo na"]])("%j → save", (said) => {
+  it.each([["haan"], ["हां"], ["haan ji"], ["yes please"], ["ok bhejo"], ["haan bhejo na"], ["theek hai"], ["haan haan"], ["han"]])("%j → save", (said) => {
     expect(save(said)).toEqual({ kind: "save" });
   });
 
@@ -382,7 +416,7 @@ describe("decideSaveVoice (reminder card)", () => {
     expect(save(said)).toEqual({ kind: "pause" });
   });
 
-  it.each([["theek hai"], ["haan nahi"], ["haan, 3000 kar do"], ["2 tareekh ko"], ["haan haan"]])(
+  it.each([["haan nahi"], ["haan, 3000 kar do"], ["2 tareekh ko"], ["haan ok"]])(
     "%j → not clear (no server call: say the change on Home)",
     (said) => {
       expect(save(said)).toEqual({ kind: "notClear" });

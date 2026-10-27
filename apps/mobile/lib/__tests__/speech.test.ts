@@ -1,6 +1,6 @@
 import { speechTexts } from "../speech";
 import { strings } from "../strings";
-import { CANCEL_PHRASES, normalizeUtterance } from "../voiceConfirm";
+import { CANCEL_PHRASES, STRICT_YES, normalizeUtterance } from "../voiceConfirm";
 
 const EN = speechTexts("en-IN");
 const HI = speechTexts("hi-IN");
@@ -41,7 +41,7 @@ describe("spoken texts (M11)", () => {
 
   // Echo guard: if the mic catches the last word of our own prompt, it must not read as an answer.
   it("no prompt, in either language, ends with a yes-word or a cancel word", () => {
-    const answerWords = new Set(["yes", "haan", "ok", "हाँ", ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
+    const answerWords = new Set([...STRICT_YES.filter((p) => !p.includes(" ")), ...CANCEL_PHRASES.filter((p) => !p.includes(" "))].map((w) => normalizeUtterance(w)));
     for (const t of [EN, HI]) {
       const prompts = [
         ...Object.values(t.questions),

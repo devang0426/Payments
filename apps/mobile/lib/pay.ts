@@ -5,6 +5,7 @@
 // If the app is killed while PhonePe is open, the pending entry survives and is resolved on the next
 // start ("Did the payment go through?").
 import type { PaymentStatus, createHistoryStore } from "./history";
+import { appStallWatcher } from "./launchStall";
 import type { Payee, createPayeeStore } from "./payees";
 import { checkPayment, type RuleFailure } from "./rules";
 import { historyStore, payeeStore } from "./stores";
@@ -28,10 +29,15 @@ type Stores = {
   history: ReturnType<typeof createHistoryStore>;
 };
 
+// Notices a launch whose result can never arrive (Android recreated FlowPay while PhonePe was open).
+// Calls onStall at most once; the returned function stops watching.
+export type StallWatcher = (onStall: () => void) => () => void;
+
 export async function sendPayment(
   p: { payee: Payee; amountPaise: number; txnRef: string; now: number },
   launch: Launcher,
   stores: Stores = { payees: payeeStore, history: historyStore },
+  watchStall: StallWatcher = appStallWatcher,
 ): Promise<SendOutcome> {
   const [{ payees }, { entries, corrupt }] = await Promise.all([stores.payees.load(), stores.history.load()]);
   const payee = payees.find((x) => x.id === p.payee.id);
@@ -57,13 +63,30 @@ export async function sendPayment(
   if (!added.ok) throw new Error(`history: ${added.error}`);
 
   inFlight = p.txnRef;
-  let outcome: { status: LaunchResult; launchFailed: boolean };
-  try {
-    outcome = { status: await launch({ payee, amountPaise: p.amountPaise, txnRef: p.txnRef }), launchFailed: false };
-  } catch {
-    outcome = { status: "failed", launchFailed: true }; // the UPI app never opened, so no money moved
-  } finally {
-    inFlight = null;
+  const launched: Promise<{ status: LaunchResult; launchFailed: boolean }> = launch({
+    payee,
+    amountPaise: p.amountPaise,
+    txnRef: p.txnRef,
+  }).then(
+    (status) => ({ status, launchFailed: false }),
+    () => ({ status: "failed", launchFailed: true }), // the UPI app never opened, so no money moved
+  );
+  let stopWatching = () => {};
+  const stalled = new Promise<null>((resolve) => {
+    stopWatching = watchStall(() => resolve(null));
+  });
+  const outcome = await Promise.race([launched, stalled]);
+  stopWatching();
+  inFlight = null;
+
+  if (outcome === null) {
+    // No result came back: "unknown" (counts toward the limit; the receipt asks the user). A result
+    // that still arrives later is saved then, except a launch error: PhonePe was open, so it proves nothing.
+    await stores.history.updateStatus(p.txnRef, "unknown");
+    launched
+      .then((late) => (late.launchFailed ? undefined : stores.history.updateStatus(p.txnRef, late.status)))
+      .catch(() => {});
+    return { kind: "sent", status: "unknown", launchFailed: false };
   }
   await stores.history.updateStatus(p.txnRef, outcome.status);
   return { kind: "sent", ...outcome };
